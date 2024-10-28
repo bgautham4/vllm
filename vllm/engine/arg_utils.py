@@ -183,6 +183,8 @@ class EngineArgs:
     override_neuron_config: Optional[Dict[str, Any]] = None
     mm_processor_kwargs: Optional[Dict[str, Any]] = None
     scheduling_policy: Literal["fcfs", "priority"] = "fcfs"
+    prefill_batch_size: Optional[int] = None
+    mqllm_ec_log_dir: Optional[str] = None  # optional logging directory
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -659,8 +661,7 @@ class EngineArgs:
             '--speculative-model',
             type=nullable_str,
             default=EngineArgs.speculative_model,
-            help=
-            'The name of the draft model to be used in speculative decoding.')
+            help='The name of the draft model to be used in speculative decoding.')
         # Quantization settings for speculative model.
         parser.add_argument(
             '--speculative-model-quantization',
@@ -682,8 +683,7 @@ class EngineArgs:
         parser.add_argument(
             '--speculative-disable-mqa-scorer',
             action='store_true',
-            help=
-            'If set to True, the MQA scorer will be disabled in speculative '
+            help='If set to True, the MQA scorer will be disabled in speculative '
             ' and fall back to batch expansion')
         parser.add_argument(
             '--speculative-draft-tensor-parallel-size',
@@ -850,6 +850,20 @@ class EngineArgs:
             'priority (lower value means earlier handling) and time of '
             'arrival deciding any ties).')
 
+        parser.add_argument(
+            '--prefill-batch-size',
+            type=int,
+            default=None,
+            help='Prefill batch size to be used for custom policy'
+            ', ensure to set it to be <= max_seq_nums')
+
+        parser.add_argument(
+            '--mqllm-ec-log-dir',
+            type=str,
+            default=None,
+            help='Log directory for MQLLMEngineClient'
+            ', can log on a per prompt basis.')
+
         return parser
 
     @classmethod
@@ -916,8 +930,8 @@ class EngineArgs:
                 f"'bitsandbytes' load format, but got {self.load_format}")
 
         if (self.load_format == "bitsandbytes" or
-            self.qlora_adapter_name_or_path is not None) and \
-            self.quantization != "bitsandbytes":
+                self.qlora_adapter_name_or_path is not None) and \
+                self.quantization != "bitsandbytes":
             raise ValueError(
                 "BitsAndBytes load format and QLoRA adapter only support "
                 f"'bitsandbytes' quantization, but got {self.quantization}")
@@ -1004,10 +1018,8 @@ class EngineArgs:
             target_parallel_config=parallel_config,
             target_dtype=self.dtype,
             speculative_model=self.speculative_model,
-            speculative_model_quantization = \
-                self.speculative_model_quantization,
-            speculative_draft_tensor_parallel_size = \
-                self.speculative_draft_tensor_parallel_size,
+            speculative_model_quantization=self.speculative_model_quantization,
+            speculative_draft_tensor_parallel_size=self.speculative_draft_tensor_parallel_size,
             num_speculative_tokens=self.num_speculative_tokens,
             speculative_disable_mqa_scorer=self.speculative_disable_mqa_scorer,
             speculative_disable_by_batch_size=self.
@@ -1017,8 +1029,7 @@ class EngineArgs:
             disable_log_stats=self.disable_log_stats,
             ngram_prompt_lookup_max=self.ngram_prompt_lookup_max,
             ngram_prompt_lookup_min=self.ngram_prompt_lookup_min,
-            draft_token_acceptance_method=\
-                self.spec_decoding_acceptance_method,
+            draft_token_acceptance_method=self.spec_decoding_acceptance_method,
             typical_acceptance_sampler_posterior_threshold=self.
             typical_acceptance_sampler_posterior_threshold,
             typical_acceptance_sampler_posterior_alpha=self.
@@ -1069,6 +1080,7 @@ class EngineArgs:
             send_delta_data=(envs.VLLM_USE_RAY_SPMD_WORKER
                              and parallel_config.use_ray),
             policy=self.scheduling_policy,
+            prefill_batch_size=self.prefill_batch_size
         )
         lora_config = LoRAConfig(
             max_lora_rank=self.max_lora_rank,
@@ -1081,7 +1093,7 @@ class EngineArgs:
             and self.max_cpu_loras > 0 else None) if self.enable_lora else None
 
         if self.qlora_adapter_name_or_path is not None and \
-            self.qlora_adapter_name_or_path != "":
+                self.qlora_adapter_name_or_path != "":
             if self.model_loader_extra_config is None:
                 self.model_loader_extra_config = {}
             self.model_loader_extra_config[
@@ -1092,7 +1104,7 @@ class EngineArgs:
         prompt_adapter_config = PromptAdapterConfig(
             max_prompt_adapters=self.max_prompt_adapters,
             max_prompt_adapter_token=self.max_prompt_adapter_token) \
-                                        if self.enable_prompt_adapter else None
+            if self.enable_prompt_adapter else None
 
         decoding_config = DecodingConfig(
             guided_decoding_backend=self.guided_decoding_backend)
