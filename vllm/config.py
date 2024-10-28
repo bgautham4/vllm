@@ -1022,7 +1022,8 @@ class SchedulerConfig:
                  num_scheduler_steps: int = 1,
                  multi_step_stream_outputs: bool = False,
                  send_delta_data: bool = False,
-                 policy: str = "fcfs") -> None:
+                 policy: str = "fcfs",
+                 prefill_batch_size: Optional[int] = None) -> None:
         if max_num_batched_tokens is None:
             if enable_chunked_prefill:
                 if num_scheduler_steps > 1:
