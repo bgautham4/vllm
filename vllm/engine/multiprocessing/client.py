@@ -38,6 +38,7 @@ from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer_group import init_tokenizer_from_configs
 from vllm.utils import deprecate_kwargs
+import time
 
 logger = init_logger(__name__)
 
@@ -77,7 +78,7 @@ class MQLLMEngineClient(EngineClient):
             every N seconds, confirming the engine is healthy
     """
 
-    def __init__(self, ipc_path: str, engine_config: EngineConfig):
+    def __init__(self, ipc_path: str, engine_config: EngineConfig, log_dir: Optional[str] = None):
         self.context = zmq.asyncio.Context()
         self._errored_with: Optional[BaseException] = None
 
@@ -115,6 +116,8 @@ class MQLLMEngineClient(EngineClient):
         # Loop to check health of the LLMEngine periodically.
         # Started after the MQLLMEngine is ready.
         self.health_loop: Optional[asyncio.Task] = None
+
+        self.log_dir: Optional[str] = log_dir
 
     @staticmethod
     def is_unsupported_config(engine_args: AsyncEngineArgs):
@@ -555,14 +558,14 @@ class MQLLMEngineClient(EngineClient):
         # it here to avoid contending with cpu resources and the GIL on the
         # backend process.
         if isinstance(params, SamplingParams) and \
-            params.guided_decoding is not None:
+                params.guided_decoding is not None:
             params = await \
                 build_guided_decoding_logits_processor_async(
                     sampling_params=params,
                     tokenizer=await self.get_tokenizer(lora_request),
                     default_guided_backend=(self.decoding_config.guided_decoding_backend
-                        if self.decoding_config
-                        else DecodingConfig.guided_decoding_backend),
+                                            if self.decoding_config
+                                            else DecodingConfig.guided_decoding_backend),
                 )
 
         # 1) Create output queue for this requests.
@@ -602,19 +605,38 @@ class MQLLMEngineClient(EngineClient):
             # that the output_loop pushes RequestOutput objects to this
             # queue after pulling them from the zmq socket.
             finished = False
+            tpot_list: List[float] = []
+            ttft = 0.0
+            start_time = time.perf_counter()
+            last_recorded_time = start_time
             try:
                 while not finished:
                     request_output = await queue.get()
+                    curr_time = time.perf_counter()
 
                     if isinstance(request_output, BaseException):
                         raise request_output
 
+                    if (ttft == 0.0):
+                        ttft = curr_time - \
+                            (start_time + request_output.metrics.time_in_queue)
+
+                    tpot_list.append(curr_time - last_recorded_time)
+                    last_recorded_time = curr_time
                     finished = request_output.finished
+
                     yield request_output
             finally:
                 # Request was canceled by the client.
                 if not finished and not self.errored:
                     await self.abort(request_id)
+                else:
+                    start_index = 1 if len(tpot_list) > 1 else 0
+                    mean_tpot = sum(tpot_list[start_index:]) / len(tpot_list)
+
+                    with open(f'{self.log_dir}/{request_id}.txt', 'w') as f:
+                        # TODO: Add stats as needed here
+                        f.write(f'{ttft} {mean_tpot}\n')
         finally:
             self.output_queues.pop(request_id)
 

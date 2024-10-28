@@ -182,7 +182,8 @@ async def build_async_engine_client_from_engine_args(
         # NOTE: Actually, this is not true yet. We still need to support
         # embedding models via RPC (see TODO above)
         engine_config = engine_args.create_engine_config()
-        mp_engine_client = MQLLMEngineClient(ipc_path, engine_config)
+        mp_engine_client = MQLLMEngineClient(
+            ipc_path, engine_config, engine_args.mqllm_ec_log_dir)
 
         try:
             while True:
@@ -533,7 +534,7 @@ async def run_server(args, **uvicorn_kwargs) -> None:
 
     valide_tool_parses = ToolParserManager.tool_parsers.keys()
     if args.enable_auto_tool_choice \
-        and args.tool_call_parser not in valide_tool_parses:
+            and args.tool_call_parser not in valide_tool_parses:
         raise KeyError(f"invalid tool call parser: {args.tool_call_parser} "
                        f"(chose from {{ {','.join(valide_tool_parses)} }})")
 
