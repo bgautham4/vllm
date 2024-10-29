@@ -214,7 +214,8 @@ def sample_hf_requests(
                            streaming=True)
     assert "conversations" in dataset.features, (
         "HF Dataset must have 'conversations' column.")
-    filter_func = lambda x: len(x["conversations"]) >= 2
+
+    def filter_func(x): return len(x["conversations"]) >= 2
     filtered_dataset = dataset.shuffle(seed=random_seed).filter(filter_func)
     sampled_requests: List[Tuple[str, int, int, Dict[str,
                                                      Collection[str]]]] = []
@@ -234,7 +235,7 @@ def sample_hf_requests(
             # Prune too short sequences.
             continue
         if fixed_output_len is None and \
-            (prompt_len > 1024 or prompt_len + output_len > 2048):
+                (prompt_len > 1024 or prompt_len + output_len > 2048):
             # Prune too long sequences.
             continue
 
@@ -266,6 +267,7 @@ def sample_random_requests(
     num_prompts: int,
     range_ratio: float,
     tokenizer: PreTrainedTokenizerBase,
+    p_geometric: Optional[float] = None
 ) -> List[Tuple[str, int, int]]:
     prefix_token_ids = np.random.randint(0,
                                          tokenizer.vocab_size,
@@ -276,11 +278,15 @@ def sample_random_requests(
         input_len + 1,
         size=num_prompts,
     )
-    output_lens = np.random.randint(
-        int(output_len * range_ratio),
-        output_len + 1,
-        size=num_prompts,
-    )
+    if p_geometric is not None:
+        output_lens = [min(np.random.geometric(p_geometric), 2048 - x)
+                       for x in input_lens]
+    else:
+        output_lens = np.random.randint(
+            int(output_len * range_ratio),
+            output_len + 1,
+            size=num_prompts,
+        )
     offsets = np.random.randint(0, tokenizer.vocab_size, size=num_prompts)
     input_requests = []
     for i in range(num_prompts):
@@ -433,6 +439,8 @@ async def benchmark(
     ignore_eos: bool,
     gootput_config_dict: Dict[str, float],
     max_concurrency: Optional[int],
+    experiment_mode: str,
+    batch_size: Optional[int] = None,
 ):
     if backend in ASYNC_REQUEST_FUNCS:
         request_func = ASYNC_REQUEST_FUNCS[backend]
@@ -500,24 +508,68 @@ async def benchmark(
             return await request_func(request_func_input=request_func_input,
                                       pbar=pbar)
 
+    outputs: List[RequestFuncOutput] = []
     benchmark_start_time = time.perf_counter()
-    tasks: List[asyncio.Task] = []
-    async for request in get_request(input_requests, request_rate):
-        prompt, prompt_len, output_len, mm_content = request
-        request_func_input = RequestFuncInput(model=model_id,
-                                              prompt=prompt,
-                                              api_url=api_url,
-                                              prompt_len=prompt_len,
-                                              output_len=output_len,
-                                              logprobs=logprobs,
-                                              best_of=best_of,
-                                              multi_modal_content=mm_content,
-                                              ignore_eos=ignore_eos)
-        tasks.append(
-            asyncio.create_task(
-                limited_request_func(request_func_input=request_func_input,
-                                     pbar=pbar)))
-    outputs: List[RequestFuncOutput] = await asyncio.gather(*tasks)
+    if (experiment_mode == 'REGULAR'):
+        tasks: List[asyncio.Task] = []
+        async for request in get_request(input_requests, request_rate):
+            prompt, prompt_len, output_len, mm_content = request
+            request_func_input = RequestFuncInput(model=model_id,
+                                                  prompt=prompt,
+                                                  api_url=api_url,
+                                                  prompt_len=prompt_len,
+                                                  output_len=output_len,
+                                                  logprobs=logprobs,
+                                                  best_of=best_of,
+                                                  multi_modal_content=mm_content,
+                                                  ignore_eos=ignore_eos)
+            tasks.append(
+                asyncio.create_task(
+                    limited_request_func(request_func_input=request_func_input,
+                                         pbar=pbar)))
+        outputs = await asyncio.gather(*tasks)
+
+    elif (experiment_mode == 'BATCHED'):
+        assert batch_size is not None
+        tasks: List[asyncio.Task] = []
+        completed: int = 0
+        while (completed < len(input_requests)):
+            for request in input_requests[completed:completed + batch_size]:
+                prompt, prompt_len, output_len, mm_content = request
+                request_func_input = RequestFuncInput(model=model_id,
+                                                      prompt=prompt,
+                                                      api_url=api_url,
+                                                      prompt_len=prompt_len,
+                                                      output_len=output_len,
+                                                      logprobs=logprobs,
+                                                      best_of=best_of,
+                                                      multi_modal_content=mm_content,
+                                                      ignore_eos=ignore_eos)
+                tasks.append(
+                    asyncio.create_task(
+                        limited_request_func(request_func_input=request_func_input,
+                                             pbar=pbar)))
+            outputs += await asyncio.gather(*tasks)
+            tasks.clear()
+            completed += batch_size
+
+    elif (experiment_mode == 'SINGLE'):
+        async for request in get_request(input_requests, float("inf")):
+            prompt, prompt_len, output_len, mm_content = request
+            request_func_input = RequestFuncInput(model=model_id,
+                                                  prompt=prompt,
+                                                  api_url=api_url,
+                                                  prompt_len=prompt_len,
+                                                  output_len=output_len,
+                                                  logprobs=logprobs,
+                                                  best_of=best_of,
+                                                  multi_modal_content=mm_content,
+                                                  ignore_eos=ignore_eos)
+
+            output: RequestFuncOutput = await limited_request_func(request_func_input=request_func_input, pbar=pbar)
+            outputs.append(output)
+    else:
+        raise ValueError("unknown experiment mode!")
 
     if profile:
         print("Stopping profiler...")
@@ -751,6 +803,7 @@ def main(args: argparse.Namespace):
             num_prompts=args.num_prompts,
             range_ratio=args.random_range_ratio,
             tokenizer=tokenizer,
+            p_geometric=args.p_geometric
         )
 
     else:
@@ -778,6 +831,8 @@ def main(args: argparse.Namespace):
             ignore_eos=args.ignore_eos,
             gootput_config_dict=gootput_config_dict,
             max_concurrency=args.max_concurrency,
+            experiment_mode=args.experiment_mode,
+            batch_size=args.batch_size,
         ))
 
     # Save config and results to json
@@ -816,7 +871,7 @@ def main(args: argparse.Namespace):
         base_model_id = model_id.split("/")[-1]
         max_concurrency_str = (f"-concurrency{args.max_concurrency}"
                                if args.max_concurrency is not None else "")
-        file_name = f"{backend}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  #noqa
+        file_name = f"{backend}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
         if args.result_filename:
             file_name = args.result_filename
         if args.result_dir:
@@ -889,8 +944,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--tokenizer",
         type=str,
-        help=
-        "Name or path of the tokenizer, if not using the default tokenizer.",  # noqa: E501
+        help="Name or path of the tokenizer, if not using the default tokenizer.",  # noqa: E501
     )
     parser.add_argument(
         "--best-of",
@@ -1004,6 +1058,16 @@ if __name__ == "__main__":
         "\"ttft\", \"tpot\", \"e2el\". For more context on the definition of "
         "goodput, refer to DistServe paper: https://arxiv.org/pdf/2401.09670 "
         "and the blog: https://hao-ai-lab.github.io/blogs/distserve")
+    parser.add_argument(
+        "--experiment-mode",
+        type=str,
+        default='REGULAR',
+        help="Set experiment mode. (REGULAR, BATCHED, SINGLE)")
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Batch size for BATHCED experiment")
 
     # group for dataset specific arguments
     sonnet_group = parser.add_argument_group("sonnet dataset options")
@@ -1011,22 +1075,19 @@ if __name__ == "__main__":
         "--sonnet-input-len",
         type=int,
         default=550,
-        help=
-        "Number of input tokens per request, used only for sonnet dataset.",
+        help="Number of input tokens per request, used only for sonnet dataset.",
     )
     sonnet_group.add_argument(
         "--sonnet-output-len",
         type=int,
         default=150,
-        help=
-        "Number of output tokens per request, used only for sonnet dataset.",
+        help="Number of output tokens per request, used only for sonnet dataset.",
     )
     sonnet_group.add_argument(
         "--sonnet-prefix-len",
         type=int,
         default=200,
-        help=
-        "Number of prefix tokens per request, used only for sonnet dataset.",
+        help="Number of prefix tokens per request, used only for sonnet dataset.",
     )
 
     sharegpt_group = parser.add_argument_group("sharegpt dataset options")
@@ -1042,15 +1103,13 @@ if __name__ == "__main__":
         "--random-input-len",
         type=int,
         default=1024,
-        help=
-        "Number of input tokens per request, used only for random sampling.",
+        help="Number of input tokens per request, used only for random sampling.",
     )
     random_group.add_argument(
         "--random-output-len",
         type=int,
         default=128,
-        help=
-        "Number of output tokens per request, used only for random sampling.",
+        help="Number of output tokens per request, used only for random sampling.",
     )
     random_group.add_argument(
         "--random-range-ratio",
@@ -1067,6 +1126,11 @@ if __name__ == "__main__":
         " context. The length range of context in a random "
         " request is [random-prefix-len, "
         " random-prefix-len + random-prefix-len * random-range-ratio).")
+    random_group.add_argument(
+        "--p-geometric",
+        type=float,
+        default=None,
+        help="Use geometric output token lens")
 
     hf_group = parser.add_argument_group("hf dataset options")
     hf_group.add_argument("--hf-subset",
