@@ -38,7 +38,11 @@ from vllm.prompt_adapter.request import PromptAdapterRequest
 from vllm.sampling_params import SamplingParams
 from vllm.transformers_utils.tokenizer_group import init_tokenizer_from_configs
 from vllm.utils import deprecate_kwargs
+
 import time
+import os
+import aiofiles
+import numpy as np
 
 logger = init_logger(__name__)
 
@@ -632,11 +636,11 @@ class MQLLMEngineClient(EngineClient):
                     await self.abort(request_id)
                 else:
                     start_index = 1 if len(tpot_list) > 1 else 0
-                    mean_tpot = sum(tpot_list[start_index:]) / len(tpot_list)
-
-                    with open(f'{self.log_dir}/{request_id}.txt', 'w') as f:
-                        # TODO: Add stats as needed here
-                        f.write(f'{ttft} {mean_tpot}\n')
+                    mean_tpot = np.mean(tpot_list[start_index:])
+                    if self.log_dir is not None:
+                        async with aiofiles.open(os.path.join(self.log_dir, f'{request_id}.txt'), 'w') as f:
+                            # TODO: Add stats as needed here
+                            await f.write(f'{ttft} {mean_tpot}\n')
         finally:
             self.output_queues.pop(request_id)
 
