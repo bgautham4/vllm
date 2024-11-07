@@ -554,7 +554,7 @@ async def benchmark(
             completed += batch_size
 
     elif (experiment_mode == 'SINGLE'):
-        async for request in get_request(input_requests, float("inf")):
+        for request in input_requests:
             prompt, prompt_len, output_len, mm_content = request
             request_func_input = RequestFuncInput(model=model_id,
                                                   prompt=prompt,
