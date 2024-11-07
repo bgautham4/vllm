@@ -1,9 +1,9 @@
 #!/bin/bash
 
-#Arguments : prompt_input_len log_dir
-
-input_len="$1"
-log_dir="$2"
+#Arguments : model prompt_input_len log_dir
+model="$1"
+input_len="$2"
+log_dir="$3"
 
 function start_server {
         local token_lim=$(($1*$input_len))
@@ -18,7 +18,7 @@ function start_server {
 
         echo "Token budget set to $token_lim"
 
-        vllm serve facebook/opt-350m  --chat-template ../examples/template_chatml.jinja \
+        vllm serve "$model"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 --batched-mode \
                 --max_num_seqs "$1" \
                 --prefill_batch_size "$1" \
@@ -32,7 +32,7 @@ for ((i=1;i<100;i=i+5)); do
         sudo nvidia-smi --lock-gpu-clocks=1410,1410
         sudo nvidia-smi --lock-memory-clocks=5001,5001
         #Run benchmark
-        python benchmark_serving.py --backend vllm --model facebook/opt-350m --dataset-name random --num_prompts $((i*1000)) --random-input-len "$input_len" --random-output-len 100 --experiment-mode BATCHED --batch_size "$i"
+        python benchmark_serving.py --backend vllm --model "$model" --dataset-name random --num_prompts $((i*1000)) --random-input-len "$input_len" --random-output-len 100 --experiment-mode BATCHED --batch_size "$i"
 
         res=$(cat "$log_dir"/*.txt | awk 'BEGIN{x = 0;y = 0;}{x += $1;y += $2;}END{printf("%f %f",x/NR,y/NR);}')
         echo "$i $res" >> results/results_batching.txt

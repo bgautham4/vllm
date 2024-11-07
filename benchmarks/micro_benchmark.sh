@@ -2,8 +2,8 @@
 
 #Arguments : model prompt_input_len log_dir
 model="$1"
-input_len="$1"
-log_dir="$2"
+input_len="$2"
+log_dir="$3"
 
 function start_server {
         local token_lim=$(($1*$input_len))
