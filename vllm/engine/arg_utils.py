@@ -187,6 +187,7 @@ class EngineArgs:
     mqllm_ec_log_dir: Optional[str] = None  # optional logging directory
     # If not none, then log model performance metrics
     model_stats_log_dir: Optional[str] = None
+    batched_mode: bool = False
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -874,6 +875,11 @@ class EngineArgs:
             ', Logs on per every model forward pass'
             ', ONLY enable in development setting!')
 
+        parser.add_argument(
+            '--batched-mode',
+            action='store_true',
+            help='Run scheduler in batched mode for batched experiments.')
+
         return parser
 
     @classmethod
@@ -1091,7 +1097,8 @@ class EngineArgs:
             send_delta_data=(envs.VLLM_USE_RAY_SPMD_WORKER
                              and parallel_config.use_ray),
             policy=self.scheduling_policy,
-            prefill_batch_size=self.prefill_batch_size
+            prefill_batch_size=self.prefill_batch_size,
+            batched_mode=self.batched_mode
         )
         lora_config = LoRAConfig(
             max_lora_rank=self.max_lora_rank,

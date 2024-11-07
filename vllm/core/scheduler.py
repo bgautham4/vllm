@@ -395,6 +395,8 @@ class Scheduler:
         # for processing and deallocation by the free_finished_seq_groups()
         self._async_stopped: List[SequenceGroup] = []
         self.prefill_batch_size = self.scheduler_config.prefill_batch_size
+        self.batched_mode = self.scheduler_config.batched_mode
+        self.last_time = 0.0
 
     @property
     def next_cache_id(self):
@@ -1187,6 +1189,119 @@ class Scheduler:
             preempted=preempted,
         )
 
+    def _my_schedule_batched(self) -> SchedulerOutputs:
+        # WARN: Use this mode only for the batched experiments.
+
+        # Include running requests to the budget.
+        budget = SchedulingBudget(
+            token_budget=self.scheduler_config.max_num_batched_tokens,
+            max_num_seqs=self.scheduler_config.max_num_seqs,
+        )
+        # Make sure we include num running seqs before scheduling prefill,
+        # so that we don't schedule beyond max_num_seqs for prefill.
+        for seq_group in self.running:
+            budget.add_num_seqs(seq_group.request_id,
+                                seq_group.get_max_num_running_seqs())
+        curr_loras = set(
+            seq_group.lora_int_id for seq_group in self.running
+            if seq_group.lora_int_id > 0) if self.lora_enabled else None
+
+        prefills = SchedulerPrefillOutputs.create_empty()
+        running_scheduled = SchedulerRunningOutputs.create_empty()
+        swapped_in = SchedulerSwappedInOutputs.create_empty()
+
+        # If any requests are swapped, prioritized swapped requests.
+        if not self.swapped:
+            # Only schedule if we have occupancy greater than prefill batch size
+            curr_time = time.perf_counter()
+            if (self.last_time == 0.0):
+                self.last_time = curr_time
+
+            if ((not self.running) and
+                (len(self.waiting) >= self.prefill_batch_size) and
+                    (budget.max_num_seqs - budget.num_curr_seqs >= self.prefill_batch_size)):
+                prefills = self._schedule_prefills(budget,
+                                                   curr_loras,
+                                                   enable_chunking=False)
+                self.last_time = curr_time
+            # Timeout for edge cases
+            if (curr_time - self.last_time > 10.0):
+                prefills = self._schedule_prefills(budget,
+                                                   curr_loras,
+                                                   enable_chunking=False)
+
+        if len(prefills.seq_groups
+               ) == 0 and self.scheduler_config.policy == "priority":
+            self._schedule_priority_preemption(budget)
+
+        # Don't schedule decodes if prefills are scheduled.
+        # NOTE: If `_schedule_prefills` doesn't enable chunking, self.running
+        # only contains decode requests, not chunked prefills.
+        if len(prefills.seq_groups) == 0:
+            running_scheduled = self._schedule_running(budget,
+                                                       curr_loras,
+                                                       enable_chunking=False)
+
+            # If any sequence group is preempted, do not swap in any sequence
+            # group. because it means there's no slot for new running requests.
+            if len(running_scheduled.preempted) + len(
+                    running_scheduled.swapped_out) == 0:
+                swapped_in = self._schedule_swapped(budget, curr_loras)
+
+        assert (budget.num_batched_tokens <=
+                self.scheduler_config.max_num_batched_tokens)
+        assert budget.num_curr_seqs <= self.scheduler_config.max_num_seqs
+
+        # Update waiting requests.
+        self.waiting.extendleft(running_scheduled.preempted)
+        # Update new running requests.
+        if len(prefills.seq_groups) > 0:
+            self.running.extend([s.seq_group for s in prefills.seq_groups])
+
+        self.running.extend(running_scheduled.decode_seq_groups_list)
+
+        if len(swapped_in.decode_seq_groups) > 0:
+            self.running.extend(
+                [s.seq_group for s in swapped_in.decode_seq_groups])
+
+        # Update swapped requests.
+        self.swapped.extend(running_scheduled.swapped_out)
+        preempted = (len(running_scheduled.preempted) +
+                     len(running_scheduled.swapped_out))
+
+        # There should be no prefill from running queue because this policy
+        # doesn't allow chunked prefills.
+        assert len(running_scheduled.prefill_seq_groups) == 0
+        assert len(swapped_in.prefill_seq_groups) == 0
+
+        # Merge lists
+        num_prefill_groups = len(prefills.seq_groups)
+        if num_prefill_groups > 0:
+            scheduled_seq_groups = prefills.seq_groups
+            scheduled_seq_groups.extend(running_scheduled.decode_seq_groups)
+        else:
+            scheduled_seq_groups = running_scheduled.decode_seq_groups
+        scheduled_seq_groups.extend(swapped_in.decode_seq_groups)
+
+        blocks_to_copy = running_scheduled.blocks_to_copy
+        blocks_to_copy.extend(swapped_in.blocks_to_copy)
+
+        ignored_seq_groups = prefills.ignored_seq_groups
+        ignored_seq_groups.extend(swapped_in.infeasible_seq_groups)
+
+        return SchedulerOutputs(
+            scheduled_seq_groups=scheduled_seq_groups,
+            num_prefill_groups=num_prefill_groups,
+            num_batched_tokens=budget.num_batched_tokens,
+            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
+            blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
+            blocks_to_copy=blocks_to_copy,
+            ignored_seq_groups=ignored_seq_groups,
+            num_lookahead_slots=running_scheduled.num_lookahead_slots,
+            running_queue_size=len(self.running),
+            preempted=preempted,
+        )
+
     def _schedule_chunked_prefill(self) -> SchedulerOutputs:
         """Schedule queued requests.
 
@@ -1276,7 +1391,10 @@ class Scheduler:
         if self.scheduler_config.chunked_prefill_enabled:
             return self._schedule_chunked_prefill()
         if self.scheduler_config.prefill_batch_size is not None:
-            return self._my_schedule()
+            if self.batched_mode:
+                return self._my_schedule_batched()
+            else:
+                return self._my_schedule()
         else:
             return self._schedule_default()
 

@@ -1025,7 +1025,8 @@ class SchedulerConfig:
                  multi_step_stream_outputs: bool = False,
                  send_delta_data: bool = False,
                  policy: str = "fcfs",
-                 prefill_batch_size: Optional[int] = None) -> None:
+                 prefill_batch_size: Optional[int] = None,
+                 batched_mode: bool = False) -> None:
         if max_num_batched_tokens is None:
             if enable_chunked_prefill:
                 if num_scheduler_steps > 1:
@@ -1069,6 +1070,8 @@ class SchedulerConfig:
         self.num_lookahead_slots = num_lookahead_slots
         self.delay_factor = delay_factor
         self.chunked_prefill_enabled = enable_chunked_prefill
+        self.prefill_batch_size = prefill_batch_size
+        self.batched_mode = batched_mode
         self.preemption_mode = preemption_mode
         self.num_scheduler_steps = num_scheduler_steps
         self.multi_step_stream_outputs = multi_step_stream_outputs
@@ -1086,6 +1089,9 @@ class SchedulerConfig:
                 "max_num_batched_tokens and makes vLLM reject longer "
                 "sequences. Please increase max_num_batched_tokens or "
                 "decrease max_model_len.")
+        if (self.batched_mode and (self.max_num_seqs != self.prefill_batch_size)):
+            raise ValueError("max_num_seqs and prefill_batch_size must be "
+                             "same when running scheduler in batched_mode.")
 
         if self.max_num_batched_tokens < self.max_num_seqs:
             raise ValueError(
