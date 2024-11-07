@@ -19,7 +19,8 @@ function start_server {
         echo "Token budget set to $token_lim"
 
         vllm serve facebook/opt-350m  --chat-template ../examples/template_chatml.jinja \
-                --port 8000 --max_num_seqs "$1" \
+                --port 8000 --batched-mode \
+                --max_num_seqs "$1" \
                 --prefill_batch_size "$1" \
                 --max_num_batched_tokens "$token_lim" \
                 --mqllm_ec_log_dir "$log_dir" &

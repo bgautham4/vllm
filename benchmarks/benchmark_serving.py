@@ -446,7 +446,7 @@ async def benchmark(
         request_func = ASYNC_REQUEST_FUNCS[backend]
     else:
         raise ValueError(f"Unknown backend: {backend}")
-
+    """    
     print("Starting initial single prompt test run...")
     test_prompt, test_prompt_len, test_output_len, test_mm_content = (
         input_requests[0])
@@ -472,7 +472,6 @@ async def benchmark(
             f"are correctly specified. Error: {test_output.error}")
     else:
         print("Initial test run completed. Starting main benchmark run...")
-
     if profile:
         print("Starting profiler...")
         profile_input = RequestFuncInput(model=model_id,
@@ -487,7 +486,7 @@ async def benchmark(
         profile_output = await request_func(request_func_input=profile_input)
         if profile_output.success:
             print("Profiler started")
-
+    """
     print(f"Traffic request rate: {request_rate}")
     print(f"Maximum request concurrency: {max_concurrency}")
 
