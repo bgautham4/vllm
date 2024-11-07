@@ -185,6 +185,8 @@ class EngineArgs:
     scheduling_policy: Literal["fcfs", "priority"] = "fcfs"
     prefill_batch_size: Optional[int] = None
     mqllm_ec_log_dir: Optional[str] = None  # optional logging directory
+    # If not none, then log model performance metrics
+    model_stats_log_dir: Optional[str] = None
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -864,6 +866,14 @@ class EngineArgs:
             help='Log directory for MQLLMEngineClient'
             ', can log on a per prompt basis.')
 
+        parser.add_argument(
+            '--model-stats-log-dir',
+            type=str,
+            default=None,
+            help='Log directory for Model performance'
+            ', Logs on per every model forward pass'
+            ', ONLY enable in development setting!')
+
         return parser
 
     @classmethod
@@ -905,6 +915,7 @@ class EngineArgs:
             override_neuron_config=self.override_neuron_config,
             config_format=self.config_format,
             mm_processor_kwargs=self.mm_processor_kwargs,
+            model_stats_log_dir=self.model_stats_log_dir,
         )
 
     def create_load_config(self) -> LoadConfig:

@@ -58,6 +58,8 @@ from vllm.worker.model_runner_base import (
     _init_attn_metadata_from_tensor_dict,
     _init_sampling_metadata_from_tensor_dict, dump_input_when_exception)
 
+import os
+
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
 
@@ -477,7 +479,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
             context_len = seq_data.get_num_computed_tokens()
             seq_len = min(seq_len, context_len + token_chunk_size)
         elif self.runner.scheduler_config.is_multi_step or \
-            self.runner.model_config.is_encoder_decoder_model:
+                self.runner.model_config.is_encoder_decoder_model:
             context_len = seq_len - 1
         else:
             context_len = seq_data.get_num_computed_tokens()
@@ -501,7 +503,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                     seq_data.mrope_position_delta,
                     context_len,
                     seq_len,
-                )
+            )
 
     def _compute_for_prefix_cache_hit(
             self, inter_data: InterDataForSeqGroup, seq_idx: int,
@@ -749,7 +751,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                 CUDA graphs is not viable, returns -1.
         """
         is_mscp: bool = self.runner.scheduler_config.is_multi_step and \
-                    self.runner.scheduler_config.chunked_prefill_enabled
+            self.runner.scheduler_config.chunked_prefill_enabled
         decode_only = self.decode_only or is_mscp
         if not decode_only:
             # Early exit so we can treat num_seqs as the batch_size below.
@@ -1048,8 +1050,8 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         # SequenceGroupToSample objects, as we reset the cache during
         # every prepare_model_inputs() call.
         self.sampling_metadata_cache: SamplingMetadataCache = \
-              SamplingMetadataCache() \
-                if self.parallel_config.pipeline_parallel_size == 1 else None
+            SamplingMetadataCache() \
+            if self.parallel_config.pipeline_parallel_size == 1 else None
 
     def load_model(self) -> None:
         logger.info("Starting to load model %s...", self.model_config.model)
@@ -1131,7 +1133,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                     "This may lead to less accurate results!")
 
         if envs.VLLM_TORCH_COMPILE_LEVEL == CompilationLevel.DYNAMO_AS_IS \
-            and supports_dynamo():
+                and supports_dynamo():
             from vllm.plugins import get_torch_compile_backend
             backend = get_torch_compile_backend() or "eager"
             self.model = torch.compile(
@@ -1642,15 +1644,36 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             model_forward_start.record()
 
         with set_forward_context(model_input.attn_metadata):
-            hidden_or_intermediate_states = model_executable(
-                input_ids=model_input.input_tokens,
-                positions=model_input.input_positions,
-                kv_caches=kv_caches,
-                attn_metadata=model_input.attn_metadata,
-                intermediate_tensors=intermediate_tensors,
-                **MultiModalInputs.as_kwargs(multi_modal_kwargs,
-                                             device=self.device),
-                **seqlen_agnostic_kwargs)
+            if (self.model_config.model_stats_log_dir is not None):
+                mft_start = torch.cuda.Event(enable_timing=True)
+                mft_end = torch.cuda.Event(enable_timing=True)
+                mft_start.record()
+
+                hidden_or_intermediate_states = model_executable(
+                    input_ids=model_input.input_tokens,
+                    positions=model_input.input_positions,
+                    kv_caches=kv_caches,
+                    attn_metadata=model_input.attn_metadata,
+                    intermediate_tensors=intermediate_tensors,
+                    **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                                 device=self.device),
+                    **seqlen_agnostic_kwargs)
+
+                mft_end.record()
+                torch.cuda.synchronize()
+                with open(os.path.join(self.model_config.model_stats_log_dir, 'temp.txt'), 'a') as f:
+                    f.write(f'{mft_start.elapsed_time(mft_end)}\n')
+
+            else:
+                hidden_or_intermediate_states = model_executable(
+                    input_ids=model_input.input_tokens,
+                    positions=model_input.input_positions,
+                    kv_caches=kv_caches,
+                    attn_metadata=model_input.attn_metadata,
+                    intermediate_tensors=intermediate_tensors,
+                    **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                                 device=self.device),
+                    **seqlen_agnostic_kwargs)
 
         if (self.observability_config is not None
                 and self.observability_config.collect_model_forward_time):
