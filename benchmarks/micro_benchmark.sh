@@ -28,11 +28,11 @@ function start_server {
         echo "Token budget set to $token_lim"
 
         vllm serve "$mdl"  --chat-template ../examples/template_chatml.jinja \
-                --port 8000 --batched-mode \
+                --port 8000 --batched_mode \
                 --max_num_seqs "$bsize" \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" \
-                --mqllm_ec_log_dir "$ldir" &
+                --model-stats-log-dir "$ldir" &
 }
 
 function run_benchmark {

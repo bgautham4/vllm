@@ -1112,7 +1112,7 @@ class Scheduler:
         # If any requests are swapped, prioritized swapped requests.
         if not self.swapped:
             # Only schedule if we have occupancy greater than prefill batch size
-            if (budget.max_num_seqs - budget._num_curr_seqs >= self.prefill_batch_size):
+            if (budget.max_num_seqs - budget.num_curr_seqs >= self.prefill_batch_size):
                 prefills = self._schedule_prefills(budget,
                                                    curr_loras,
                                                    enable_chunking=False)
@@ -1218,8 +1218,7 @@ class Scheduler:
                 self.last_time = curr_time
 
             if ((not self.running) and
-                (len(self.waiting) >= self.prefill_batch_size) and
-                    (budget.max_num_seqs - budget.num_curr_seqs >= self.prefill_batch_size)):
+                    (len(self.waiting) >= self.prefill_batch_size)):
                 prefills = self._schedule_prefills(budget,
                                                    curr_loras,
                                                    enable_chunking=False)
