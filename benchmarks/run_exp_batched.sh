@@ -62,6 +62,9 @@ function run_benchmark {
                         --experiment-mode BATCHED --batch_size "$i"
 
                 res=$(cat "$ldir"/*.txt | awk 'BEGIN{x = 0;y = 0;}{x += $1;y += $2;}END{printf("%f %f",x/NR,y/NR);}')
+                if [[ ! -d 'results ']];then
+                        mkdir results
+                fi
                 echo "$i $res" >> results/results_batching.txt
                 rm "$log_dir"/*.txt
                 #Kill server process

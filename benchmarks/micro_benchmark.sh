@@ -61,7 +61,7 @@ function run_benchmark {
                         --random-input-len "$il" --random-output-len "$ol" \
                         --experiment-mode BATCHED --batch_size "$i"
 
-                mv "$log_dir"/temp.txt temp.txt
+                mv "$ldir"/temp.txt temp.txt
                 if [[ ! -f "temp_old.txt" ]];then
                         mv temp.txt res.txt
                 else
@@ -72,6 +72,9 @@ function run_benchmark {
                 kill -SIGTERM "$!"
         done
         rm temp.txt
+        if [[ ! -d 'results' ]];then
+                mkdir results
+        fi
         mv temp_old.txt results/mb_res.txt
 }
 

@@ -1229,6 +1229,7 @@ class Scheduler:
                 prefills = self._schedule_prefills(budget,
                                                    curr_loras,
                                                    enable_chunking=False)
+                self.last_time = curr_time
 
         if len(prefills.seq_groups
                ) == 0 and self.scheduler_config.policy == "priority":
