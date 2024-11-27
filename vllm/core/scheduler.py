@@ -1224,7 +1224,7 @@ class Scheduler:
                                                    enable_chunking=False)
                 self.last_time = curr_time
             # Timeout for edge cases
-            if (curr_time - self.last_time > 10.0):
+            if (curr_time - self.last_time > 30.0):
                 prefills = self._schedule_prefills(budget,
                                                    curr_loras,
                                                    enable_chunking=False)

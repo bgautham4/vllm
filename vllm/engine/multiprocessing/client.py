@@ -41,8 +41,11 @@ from vllm.utils import deprecate_kwargs
 
 import time
 import os
-import aiofiles
 import numpy as np
+from collections import namedtuple
+
+MyMetricsOfInterest = namedtuple(
+    'MyMetricsOfInterest', ['prefill_time', 'decode_time'])  # Mean metrics
 
 logger = init_logger(__name__)
 
@@ -120,8 +123,13 @@ class MQLLMEngineClient(EngineClient):
         # Loop to check health of the LLMEngine periodically.
         # Started after the MQLLMEngine is ready.
         self.health_loop: Optional[asyncio.Task] = None
-
+        # For custom logging
         self.log_dir: Optional[str] = log_dir
+        self.metrics: Dict[str, MyMetricsOfInterest] = {}
+        self.async_lock = asyncio.Lock()
+        self.num_requests_processed = 0
+        self.benchmark_start_time = 0.0
+        self.benchmark_end_time = 0.001
 
     @staticmethod
     def is_unsupported_config(engine_args: AsyncEngineArgs):
@@ -161,6 +169,17 @@ class MQLLMEngineClient(EngineClient):
                 logger.debug("Heartbeat successful.")
 
         except asyncio.CancelledError:
+            # Write to log file before client shuts down
+            if self.log_dir is not None:
+                with open(os.path.join(self.log_dir, 'timing.txt'), 'w') as f:
+                    for req, metric in self.metrics.items():
+                        f.write(f'{req} {metric.prefill_time} {
+                                metric.decode_time}\n')
+
+                with open(os.path.join(self.log_dir, 'throughput.txt'), 'w') as f:
+                    f.write(f'{self.num_requests_processed /
+                            (self.benchmark_end_time - self.benchmark_start_time)}\n')
+
             logger.debug("Shutting down MQLLMEngineClient check health loop.")
 
         except Exception as e:
@@ -637,10 +656,14 @@ class MQLLMEngineClient(EngineClient):
                 else:
                     start_index = 1 if len(tpot_list) > 1 else 0
                     mean_tpot = np.mean(tpot_list[start_index:])
-                    if self.log_dir is not None:
-                        async with aiofiles.open(os.path.join(self.log_dir, f'{request_id}.txt'), 'w') as f:
-                            # TODO: Add stats as needed here
-                            await f.write(f'{ttft} {mean_tpot}\n')
+                    self.metrics[request_id] = MyMetricsOfInterest(
+                        ttft, mean_tpot)
+                    async with self.lock:
+                        if (self.benchmark_start_time == 0.0):
+                            self.benchmark_start_time = last_recorded_time
+                        else:
+                            self.num_requests_processed += 1
+                            self.benchmark_end_time = time.perf_counter()
         finally:
             self.output_queues.pop(request_id)
 
