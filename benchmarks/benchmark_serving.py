@@ -567,9 +567,44 @@ async def benchmark(
 
             output: RequestFuncOutput = await limited_request_func(request_func_input=request_func_input, pbar=pbar)
             outputs.append(output)
+
+    elif (experiment_mode == 'CUSTOM'):
+        # Custom experiment_mode for online throughput measurements
+        tasks: List[asyncio.Task] = []
+        backlog_tasks: List[asyncio.Task] = []
+        completed: int = 0
+        while (completed < len(input_requests)):
+            for request in input_requests[completed:completed + 500]:
+                prompt, prompt_len, output_len, mm_content = request
+                request_func_input = RequestFuncInput(model=model_id,
+                                                      prompt=prompt,
+                                                      api_url=api_url,
+                                                      prompt_len=prompt_len,
+                                                      output_len=output_len,
+                                                      logprobs=logprobs,
+                                                      best_of=best_of,
+                                                      multi_modal_content=mm_content,
+                                                      ignore_eos=ignore_eos)
+                tasks.append(
+                    asyncio.create_task(
+                        limited_request_func(request_func_input=request_func_input,
+                                             pbar=pbar)))
+            # Blast another 500 requests but dont await them
+            # These are used to backlog the vllm serving host
+            for request in input_requests[completed + 500:completed + 1000]:
+                backlog_tasks.append(
+                    asyncio.create_task(
+                        limited_request_func(request_func_input=request_func_input,
+                                             pbar=pbar)))
+            outputs += await asyncio.gather(*tasks)
+            tasks.clear()
+            completed += 1000
+        # Finally await the backlog tasks
+        await asyncio.gather(*backlog_tasks)
+
     else:
         raise ValueError("unknown experiment mode!")
-
+    """
     if profile:
         print("Stopping profiler...")
         profile_input = RequestFuncInput(
@@ -584,7 +619,7 @@ async def benchmark(
         profile_output = await request_func(request_func_input=profile_input)
         if profile_output.success:
             print("Profiler stopped")
-
+    """
     if pbar is not None:
         pbar.close()
 
@@ -1061,7 +1096,7 @@ if __name__ == "__main__":
         "--experiment-mode",
         type=str,
         default='REGULAR',
-        help="Set experiment mode. (REGULAR, BATCHED, SINGLE)")
+        help="Set experiment mode. (REGULAR, BATCHED, SINGLE, CUSTOM)")
     parser.add_argument(
         "--batch-size",
         type=int,
