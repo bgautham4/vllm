@@ -2,21 +2,16 @@
 
 #Display help text
 function disp_help {
-        echo "Help text"
-        echo
-        echo "Usage: [-h] [--model model] [--ilen input length] [--olen output length] [--log_dir log directory]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--olen output length] [--log-dir log directory]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
         echo "--ilen == --olen = 100"
-        echo "--log_dir=None, will be created automatically."
+        echo "--log-dir=None, will be created automatically."
 }
 
 function start_server {
-        local mdl="$1"
-        local bsize="$2"
-        local il="$3"
-        local ldir="$4"
-        local token_lim=$(($il * $bsize))
+        local bsize="$1"
+        local token_lim=$(( ($ILEN * 2) * $bsize))
         if [[ "$token_lim" -lt 2048 ]];then
                 token_lim=2048
         fi
@@ -27,41 +22,31 @@ function start_server {
 
         echo "Token budget set to $token_lim"
 
-        vllm serve "$mdl"  --chat-template ../examples/template_chatml.jinja \
+        vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 --batched_mode \
                 --max_num_seqs "$bsize" \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" \
-                --model-stats-log-dir "$ldir" &
+                --model-stats-log-dir "$LOG_DIR" &
 }
 
 function run_benchmark {
-        local mdl="$1"
-        local il="$2"
-        local ol="$3"
-        local ldir="$4"
-
-        if [[ -z "$ldir" ]];then
-                mkdir /tmp/vllm_temp_log_dir/ 
-                ldir='/tmp/vllm_temp_log_dir/'
-        fi
-
-        echo "Logs written to: $ldir"
+        echo "Logs written to: $LOG_DIR"
 
         for ((i=1;i<100;i*=2)); do
-                start_server "$mdl" "$i" "$il" "$ldir"
+                start_server "$i"
                 sleep 40 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1410,1410 #Change GPU mem and SM frequencies here
                 sudo nvidia-smi --lock-memory-clocks=5001,5001
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
-                        --model "$mdl" \
+                        --model "$MODEL" \
                         --dataset-name random \
                         --num_prompts "$i" \
-                        --random-input-len "$il" --random-output-len "$ol" \
+                        --random-input-len "$ILEN" --random-output-len "$OLEN" \
                         --experiment-mode BATCHED --batch_size "$i"
 
-                mv "$ldir"/temp.txt temp.txt
+                mv "$LOG_DIR"/temp.txt temp.txt
                 if [[ ! -f "temp_old.txt" ]];then
                         mv temp.txt res.txt
                 else
@@ -70,6 +55,8 @@ function run_benchmark {
                 mv res.txt temp_old.txt
                 #Kill server process
                 kill -SIGTERM "$!"
+                #wait for cleanup
+                sleep 10
         done
         rm temp.txt
         if [[ ! -d 'results' ]];then
@@ -81,16 +68,16 @@ function run_benchmark {
 TEMP=$(getopt -o 'h' -l 'model:,ilen:,olen:,log-dir:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
-        disp_help
+        echo 'Use -h to display help text.'
         exit 1
 fi
 eval set -- "$TEMP"
 unset TEMP
 
-model="facebook/opt-350m"
-ilen=100
-olen=100
-log_dir=
+MODEL="facebook/opt-350m"
+ILEN=100
+OLEN=100
+LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)"
 while true; do
         case "$1" in
                 '-h')
@@ -98,22 +85,22 @@ while true; do
                         exit 0
                 ;;
                 '--model')
-                        model="$2"
+                        MODEL="$2"
                         shift 2
                         continue
                 ;;
                 '--ilen')
-                        ilen="$2"
+                        ILEN="$2"
                         shift 2
                         continue
                 ;;
                 '--olen')
-                        olen="$2"
+                        OLEN="$2"
                         shift 2
                         continue
                 ;;
                 '--log-dir')
-                        log_dir="$2"
+                        LOG_DIR="$2"
                         shift 2
                         continue
                 ;;
@@ -130,7 +117,7 @@ while true; do
         esac
 done
 
-echo "Using model: $model"
-echo "Using input prompt length: $ilen"
-echo "Using output prompt length: $olen"
-run_benchmark "$model" "$ilen" "$olen" "$log_dir"
+echo "Using model: $MODEL"
+echo "Using input prompt length: $ILEN"
+echo "Using output prompt length: $OLEN"
+run_benchmark 
