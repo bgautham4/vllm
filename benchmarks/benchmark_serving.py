@@ -568,13 +568,12 @@ async def benchmark(
             output: RequestFuncOutput = await limited_request_func(request_func_input=request_func_input, pbar=pbar)
             outputs.append(output)
 
-    elif (experiment_mode == 'CUSTOM'):
+    elif (experiment_mode == 'BACKLOGGED'):
         # Custom experiment_mode for online throughput measurements
         tasks: List[asyncio.Task] = []
-        backlog_tasks: List[asyncio.Task] = []
         completed: int = 0
         while (completed < len(input_requests)):
-            for request in input_requests[completed:completed + 500]:
+            for request in input_requests[completed:completed + 1000]:
                 prompt, prompt_len, output_len, mm_content = request
                 request_func_input = RequestFuncInput(model=model_id,
                                                       prompt=prompt,
@@ -589,18 +588,15 @@ async def benchmark(
                     asyncio.create_task(
                         limited_request_func(request_func_input=request_func_input,
                                              pbar=pbar)))
-            # Blast another 500 requests but dont await them
-            # These are used to backlog the vllm serving host
-            for request in input_requests[completed + 500:completed + 1000]:
-                backlog_tasks.append(
-                    asyncio.create_task(
-                        limited_request_func(request_func_input=request_func_input,
-                                             pbar=pbar)))
-            outputs += await asyncio.gather(*tasks)
-            tasks.clear()
+            while True:
+                done, pending = await asyncio.wait(tasks, timeout=0.01)  # Spin
+                if len(done) >= 500:
+                    outputs += await asyncio.gather(*done)
+                    tasks = list(pending)
+                    break
             completed += 1000
         # Finally await the backlog tasks
-        await asyncio.gather(*backlog_tasks)
+        output += await asyncio.gather(*tasks)
 
     else:
         raise ValueError("unknown experiment mode!")
@@ -1096,7 +1092,7 @@ if __name__ == "__main__":
         "--experiment-mode",
         type=str,
         default='REGULAR',
-        help="Set experiment mode. (REGULAR, BATCHED, SINGLE, CUSTOM)")
+        help="Set experiment mode. (REGULAR, BATCHED, SINGLE, BACKLOGGED)")
     parser.add_argument(
         "--batch-size",
         type=int,

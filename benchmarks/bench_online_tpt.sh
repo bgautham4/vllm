@@ -2,10 +2,11 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--olen output length]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--olen-mean output length]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--ilen == --olen = 100"
+        echo "--ilen == 100"
+        echo "--olen-mean == 100"
 }
 
 function start_server {
@@ -22,8 +23,8 @@ function start_server {
         echo "Token budget set to $token_lim"
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
-                --port 8000 --batched_mode \
-                --max_num_seqs "$bsize" \
+                --port 8000 \
+                --max_num_seqs 100 \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" \
                 --mqllm_ec_log_dir "$LOG_DIR" &
@@ -32,7 +33,7 @@ function start_server {
 function run_benchmark {
         echo "Logs written to: $LOG_DIR"
 
-        for ((i=1;i<100;i=i+5)); do
+        for ((i=1;i<100;i=i+1)); do
                 start_server "$i"
                 sleep 80 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1410,1410
@@ -41,20 +42,20 @@ function run_benchmark {
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
                         --dataset-name random \
-                        --num_prompts $((i*100)) \
-                        --random-input-len "$ILEN" --random-output-len "$OLEN" \
-                        --experiment-mode BATCHED --batch_size "$i"
+                        --num_prompts 100000 \
+                        --random-input-len "$ILEN" --p-geometric "$PROB" \
+                        --experiment-mode BACKLOGGED
 
                 #Kill server process
                 kill -SIGTERM "$!"
                 #wait for cleanup
                 sleep 20
                 #Process logs
-                res=$(awk 'BEGIN{x = 0;y = 0;}{x += $2;y += $3;}END{printf("%f %f",x/NR,y/NR);}' "$LOG_DIR/timing.txt")
+                res=$(cat "$LOG_DIR/throughput.txt")
                 if [[ ! -d 'results' ]];then
                         mkdir results
                 fi
-                echo "$i $res" >> results/results_batching.txt
+                echo "$i $res" >> results/results_throughput.txt
                 rm "$LOG_DIR"/*.txt
         done
 }
@@ -71,6 +72,7 @@ unset TEMP
 MODEL="facebook/opt-350m"
 ILEN=100
 OLEN=100
+PROB=$(awk '{print 1/$1}' <<< "$OLEN")
 LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)"
 while true; do
         case "$1" in
@@ -108,6 +110,6 @@ done
 
 echo "Using model: $MODEL"
 echo "Using input prompt length: $ILEN"
-echo "Using output prompt length: $OLEN"
+echo "Using mean output tokens generated: $OLEN"
 run_benchmark 
 rm -rf "$LOG_DIR"

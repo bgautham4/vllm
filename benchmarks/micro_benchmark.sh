@@ -2,11 +2,10 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--olen output length] [--log-dir log directory]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--olen output length]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
         echo "--ilen == --olen = 100"
-        echo "--log-dir=None, will be created automatically."
 }
 
 function start_server {
@@ -35,7 +34,7 @@ function run_benchmark {
 
         for ((i=1;i<100;i*=2)); do
                 start_server "$i"
-                sleep 40 #Sleep to ensure server startup is complete
+                sleep 80 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1410,1410 #Change GPU mem and SM frequencies here
                 sudo nvidia-smi --lock-memory-clocks=5001,5001
                 #Run benchmark
@@ -65,7 +64,7 @@ function run_benchmark {
         mv temp_old.txt results/mb_res.txt
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,olen:,log-dir:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,olen:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -77,7 +76,7 @@ unset TEMP
 MODEL="facebook/opt-350m"
 ILEN=100
 OLEN=100
-LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)"
+LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)" #Temp dir for temp logs
 while true; do
         case "$1" in
                 '-h')
@@ -99,11 +98,6 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--log-dir')
-                        LOG_DIR="$2"
-                        shift 2
-                        continue
-                ;;
                 '--')
                         shift
                         break
@@ -121,3 +115,4 @@ echo "Using model: $MODEL"
 echo "Using input prompt length: $ILEN"
 echo "Using output prompt length: $OLEN"
 run_benchmark 
+rm -rf "$LOG_DIR"
