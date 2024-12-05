@@ -45,7 +45,8 @@ import numpy as np
 from collections import namedtuple
 
 MyMetricsOfInterest = namedtuple(
-    'MyMetricsOfInterest', ['prefill_time', 'decode_time'])  # Mean metrics
+    # Mean metrics
+    'MyMetricsOfInterest', ['prefill_time', 'decode_time', 'finish_time'])
 
 logger = init_logger(__name__)
 
@@ -126,10 +127,7 @@ class MQLLMEngineClient(EngineClient):
         # For custom logging
         self.log_dir: Optional[str] = log_dir
         self.metrics: Dict[str, MyMetricsOfInterest] = {}
-        self.async_lock = asyncio.Lock()
-        self.num_requests_processed = 0
         self.benchmark_start_time = 0.0
-        self.benchmark_end_time = 0.001
 
     @staticmethod
     def is_unsupported_config(engine_args: AsyncEngineArgs):
@@ -177,8 +175,11 @@ class MQLLMEngineClient(EngineClient):
                                 metric.decode_time}\n')
 
                 with open(os.path.join(self.log_dir, 'throughput.txt'), 'w') as f:
-                    f.write(f'{self.num_requests_processed /
-                            (self.benchmark_end_time - self.benchmark_start_time)}\n')
+                    num_requests_processed = len(self.metrics)
+                    last_time: float = max(self.metrics.values(
+                    ), key=lambda x: x.finish_time).finish_time
+                    f.write(f'{num_requests_processed /
+                            (last_time - self.benchmark_start_time)}\n')
 
             logger.debug("Shutting down MQLLMEngineClient check health loop.")
 
@@ -187,7 +188,6 @@ class MQLLMEngineClient(EngineClient):
 
     async def run_output_handler_loop(self):
         """Get RequestOutputs from Engine and stream to Request Queues"""
-
         try:
             while True:
                 # Poll, checking for ENGINE_DEAD
@@ -484,6 +484,9 @@ class MQLLMEngineClient(EngineClient):
         assert (prompt is not None and sampling_params is not None
                 and request_id is not None)
 
+        if (self.benchmark_start_time == 0.0):
+            self.benchmark_start_time = time.perf_counter()
+
         return self._process_request(prompt, sampling_params, request_id,
                                      lora_request, trace_headers,
                                      prompt_adapter_request, priority)
@@ -657,13 +660,7 @@ class MQLLMEngineClient(EngineClient):
                     start_index = 1 if len(tpot_list) > 1 else 0
                     mean_tpot = np.mean(tpot_list[start_index:])
                     self.metrics[request_id] = MyMetricsOfInterest(
-                        ttft, mean_tpot)
-                    async with self.lock:
-                        if (self.benchmark_start_time == 0.0):
-                            self.benchmark_start_time = last_recorded_time
-                        else:
-                            self.num_requests_processed += 1
-                            self.benchmark_end_time = time.perf_counter()
+                        ttft, mean_tpot, last_recorded_time)
         finally:
             self.output_queues.pop(request_id)
 
