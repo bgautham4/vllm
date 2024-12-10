@@ -46,7 +46,7 @@ from collections import namedtuple
 
 MyMetricsOfInterest = namedtuple(
     # Mean metrics
-    'MyMetricsOfInterest', ['prefill_time', 'decode_time', 'finish_time'])
+    'MyMetricsOfInterest', ['prefill_time', 'decode_times', 'finish_time'])
 
 logger = init_logger(__name__)
 
@@ -168,17 +168,23 @@ class MQLLMEngineClient(EngineClient):
 
         except asyncio.CancelledError:
             # Write to log file before client shuts down
+            prefill_times: List[float] = [
+                metric.prefill_time for metric in self.metrics.values()]
+            decode_times: List[float] = [
+                tpot for metric in self.metrics.values() for tpot in metric.decode_times]
+            prefill_mean = np.mean(prefill_times)
+            prefill_std = np.std(prefill_times)
+            decode_mean = np.mean(decode_times)
+            decode_std = np.std(decode_times)
+            num_requests_processed = len(self.metrics)
+            last_time: float = max(self.metrics.values(),
+                                   key=lambda x: x.finish_time).finish_time
             if self.log_dir is not None:
-                with open(os.path.join(self.log_dir, 'timing.txt'), 'w') as f:
-                    for req, metric in self.metrics.items():
-                        f.write(f'{req} {metric.prefill_time} {
-                                metric.decode_time}\n')
-
-                with open(os.path.join(self.log_dir, 'throughput.txt'), 'w') as f:
-                    num_requests_processed = len(self.metrics)
-                    last_time: float = max(self.metrics.values(
-                    ), key=lambda x: x.finish_time).finish_time
-                    f.write(f'{num_requests_processed /
+                with open(os.path.join(self.log_dir, 'metrics.txt'), 'w') as f:
+                    f.write(f'dur: {last_time - self.benchmark_start_time}\n')
+                    f.write(f'ttft: {prefill_mean} {prefill_std}\n')
+                    f.write(f'decode: {decode_mean} {decode_std}\n')
+                    f.write(f'tpt: {num_requests_processed /
                             (last_time - self.benchmark_start_time)}\n')
 
             logger.debug("Shutting down MQLLMEngineClient check health loop.")
@@ -658,9 +664,8 @@ class MQLLMEngineClient(EngineClient):
                     await self.abort(request_id)
                 else:
                     start_index = 1 if len(tpot_list) > 1 else 0
-                    mean_tpot = np.mean(tpot_list[start_index:])
                     self.metrics[request_id] = MyMetricsOfInterest(
-                        ttft, mean_tpot, last_recorded_time)
+                        ttft, tpot_list[start_index:], last_recorded_time)
         finally:
             self.output_queues.pop(request_id)
 
