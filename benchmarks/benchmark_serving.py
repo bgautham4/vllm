@@ -590,7 +590,7 @@ async def benchmark(
                                              pbar=pbar)))
             while True:
                 done, pending = await asyncio.wait(tasks, timeout=0.01)  # Spin
-                if len(done) >= 500:
+                if len(done) >= 500 or len(pending) == 0:
                     outputs += await asyncio.gather(*done)
                     tasks = list(pending)
                     break

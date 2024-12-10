@@ -51,7 +51,7 @@ function run_benchmark {
                 #wait for cleanup
                 sleep 20
                 #Process logs
-                res=$(cat "$LOG_DIR/throughput.txt")
+                res=$(awk '/tpt:.*/{print $2}' "$LOG_DIR/metrics.txt")
                 if [[ ! -d 'results' ]];then
                         mkdir results
                 fi
@@ -74,6 +74,7 @@ ILEN=100
 OLEN=100
 PROB=$(awk '{print 1/$1}' <<< "$OLEN")
 LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)"
+mkdir -p "$LOG_DIR" || exit
 while true; do
         case "$1" in
                 '-h')

@@ -22,7 +22,7 @@ function start_server {
         echo "Token budget set to $token_lim"
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
-                --port 8000 --batched_mode \
+                --port 8000 \
                 --max_num_seqs "$bsize" \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" \
@@ -30,7 +30,7 @@ function start_server {
 }
 
 function run_benchmark {
-        echo "Logs written to: $LOG_DIR"
+        echo "Using $LOG_DIR as temp log directory"
 
         for ((i=1;i<100;i=i+5)); do
                 start_server "$i"
@@ -41,19 +41,25 @@ function run_benchmark {
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
                         --dataset-name random \
-                        --num_prompts $((i*100)) \
+                        --num_prompts $(( $i * 100 )) \
                         --random-input-len "$ILEN" --random-output-len "$OLEN" \
-                        --experiment-mode BATCHED --batch_size "$i"
+                        --experiment-mode BACKLOGGED 
 
                 #Kill server process
                 kill -SIGTERM "$!"
                 #wait for cleanup
                 sleep 20
                 #Process logs
-                res=$(awk 'BEGIN{x = 0;y = 0;}{x += $2;y += $3;}END{printf("%f %f",x/NR,y/NR);}' "$LOG_DIR/timing.txt")
+                res=$(awk -v bsize="$i" -v ilen="$ILEN" '
+                BEGIN{tpot=0;pft=0;dur=0;}
+                /dur:.*/{dur=$2;}
+                /decode:.*/{tpot=$2;}
+                /ttft:.*/{pft=$2;}
+                END{printf("%f %f", bsize * ilen / pft, bsize / tpot);}
+                ' "$LOG_DIR/metrics.txt")
                 if [[ ! -d 'results' ]];then
                         mkdir results
-                fi
+                fi 
                 echo "$i $res" >> results/results_batching.txt
                 rm "$LOG_DIR"/*.txt
         done
@@ -72,6 +78,7 @@ MODEL="facebook/opt-350m"
 ILEN=100
 OLEN=100
 LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)"
+mkdir -p "$LOG_DIR" || exit
 while true; do
         case "$1" in
                 '-h')
