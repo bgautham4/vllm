@@ -596,7 +596,7 @@ async def benchmark(
                     break
             completed += 1000
         # Finally await the backlog tasks
-        output += await asyncio.gather(*tasks)
+        outputs += await asyncio.gather(*tasks)
 
     else:
         raise ValueError("unknown experiment mode!")
