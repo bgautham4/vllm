@@ -2,10 +2,12 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--olen output length]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--p-geometric p] [--max-num-seqs N]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--ilen == --olen = 100"
+        echo "--ilen =100"
+        echo "--p--geometric=0.01"
+        echo "--max-num-seqs=100"
 }
 
 function start_server {
@@ -23,16 +25,14 @@ function start_server {
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
-                --max_num_seqs "$bsize" \
+                --max_num_seqs "$MAX_N" \
                 --prefill_batch_size "$bsize" \
-                --max_num_batched_tokens "$token_lim" \
-                --mqllm_ec_log_dir "$LOG_DIR" &
+                --max_num_batched_tokens "$token_lim" &
 }
 
 function run_benchmark {
-        echo "Using $LOG_DIR as temp log directory"
 
-        for ((i=1;i<100;i=i+5)); do
+        for ((i=1;i<100;i=i+1)); do
                 start_server "$i"
                 sleep 80 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1410,1410
@@ -41,8 +41,8 @@ function run_benchmark {
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
                         --dataset-name random \
-                        --num_prompts $(( $i * 100 )) \
-                        --random-input-len "$ILEN" --random-output-len "$OLEN" \
+                        --num_prompts 10000 \
+                        --random-input-len "$ILEN" --random-output-len "$PROB" \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process
@@ -50,21 +50,10 @@ function run_benchmark {
                 #wait for cleanup
                 sleep 20
                 #Process logs
-                res=$(awk -v bsize="$i" -v ilen="$ILEN" '
-                BEGIN{tbt_mean=0;tbt_std=0;pft_mean=0;pft_std=0;}
-                /decode:.*/{tbt_mean=$2;tbt_std=$3;}
-                /ttft:.*/{pft_mean=$2;pft_std=$3;}
-                END{printf("(%f,%f) (%f,%f)", pft_mean, pft_std, tbt_mean, tbt_std);}
-                ' "$LOG_DIR/metrics.txt")
-                if [[ ! -d 'results' ]];then
-                        mkdir results
-                fi 
-                echo "$i $res" >> results/results_batching.txt
-                rm "$LOG_DIR"/*.txt
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,olen:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,p-geometric:,max-num-seqs:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -74,10 +63,9 @@ eval set -- "$TEMP"
 unset TEMP
 
 MODEL="facebook/opt-350m"
-ILEN=100
-OLEN=100
-LOG_DIR="/tmp/$(tr -dc A-Za-z0-9 < /dev/urandom | head -c 13)"
-mkdir -p "$LOG_DIR" || exit
+ILEN='100'
+PROB='0.01'
+MAX_N='100'
 while true; do
         case "$1" in
                 '-h')
@@ -94,11 +82,16 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--olen')
-                        OLEN="$2"
+                '--p-geometric')
+                        PROB="$2"
                         shift 2
                         continue
                 ;;
+                '--max-num-seqs')
+                        MAX_N="$2"
+                        shift 2
+                        continue
+                        ;;
                 '--')
                         shift
                         break
@@ -114,6 +107,8 @@ done
 
 echo "Using model: $MODEL"
 echo "Using input prompt length: $ILEN"
-echo "Using output prompt length: $OLEN"
+echo "Using output prompt length: $PROB"
+cd "${0%/*}"
+export VLLM_LOGGING_CONFIG_PATH="$(pwd)/log_conf/config.json" 
 run_benchmark 
 rm -rf "$LOG_DIR"

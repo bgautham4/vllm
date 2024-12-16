@@ -719,7 +719,9 @@ class LLMEngine:
         ]
         min_cost_scheduler = self.scheduler[costs.index(min(costs))]
         min_cost_scheduler.add_seq_group(seq_group)
-
+        # Log request beging added into queue
+        logger.info("ADD_REQ", extra={
+                    "id": request_id, "perf_timer": time.perf_counter()})
         return seq_group
 
     def stop_remote_worker_execution_loop(self) -> None:
@@ -1068,7 +1070,7 @@ class LLMEngine:
         outputs_by_sequence_group: List[List[SequenceGroupOutput]]
         if has_multiple_outputs:
             assert self.scheduler_config.is_multi_step or \
-                     self.speculative_config
+                self.speculative_config
             # Organize outputs by [step][sequence group] instead of
             # [sequence group][step].
             outputs_by_sequence_group = create_output_by_sequence_group(
@@ -1234,6 +1236,13 @@ class LLMEngine:
         # Immediately process request outputs here (if callback is given)
         if (ctx.request_outputs
                 and self.process_request_outputs_callback is not None):
+            # Processing callback, here is where the output tokens are sent
+            # to the EngineClient process, so log it here..
+            finished_proc = "PREFILL_END" if (
+                ctx.scheduler_outputs.num_prefill_groups > 0) else "DECODE_END"
+            reqs_processed = [
+                seq.seq_group.request_id for seq in ctx.scheduler_outputs.scheduled_seq_groups]
+            logger.info(finished_proc, extra={"ids": reqs_processed})
             self.process_request_outputs_callback(ctx.request_outputs)
             ctx.request_outputs.clear()
 
@@ -1259,7 +1268,7 @@ class LLMEngine:
         required if the worker is to perform async forward pass to next step.
         """
         for seq_group_metadata, sequence_group_outputs, scheduled_seq_group in \
-            zip(seq_group_metadata_list, output, scheduled_seq_groups):
+                zip(seq_group_metadata_list, output, scheduled_seq_groups):
             seq_group = scheduled_seq_group.seq_group
 
             if seq_group.is_finished():
@@ -1420,6 +1429,14 @@ class LLMEngine:
                 execute_model_req.async_callback = self.async_callbacks[
                     virtual_engine]
 
+            # Log initiation of model processing
+            curr_proc = "PREFILL" if (
+                scheduler_outputs.num_prefill_groups > 0) else "DECODE"
+            reqs_scheduled = [
+                seq.seq_group.request_id for seq in scheduler_outputs.scheduled_seq_groups]
+            logger.info(curr_proc, extra={"ids": reqs_scheduled})
+            # execute_model executes a callback to _process_model_outputs,
+            # so logging is done there next
             outputs = self.model_executor.execute_model(
                 execute_model_req=execute_model_req)
 
@@ -1946,7 +1963,8 @@ class LLMEngine:
             if len(prompt_ids) > max_prompt_len:
                 raise ValueError(
                     f"The prompt (total length {len(prompt_ids)}) is too long "
-                    f"to fit into the model (context length {max_prompt_len}). "
+                    f"to fit into the model (context length {
+                        max_prompt_len}). "
                     "Make sure that `max_model_len` is no smaller than the "
                     "number of text tokens plus multimodal tokens. For image "
                     "inputs, the number of image tokens depends on the number "
