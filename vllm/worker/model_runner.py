@@ -1705,7 +1705,11 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             return []
 
         if model_input.async_callback is not None:
+            logger.trace("CALLBACK_START", extra={
+                         "perf_timer": time.perf_counter()})
             model_input.async_callback()
+            logger.trace("CALLBACK_END", extra={
+                         "perf_timer": time.perf_counter()})
 
         # Sample the next token.
         output: SamplerOutput = self.model.sample(

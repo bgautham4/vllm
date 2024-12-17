@@ -47,10 +47,10 @@ class MQLLMEngine:
     This class is used to wrap the :class:`LLMEngine` class to enable use
     in concurrnet manner. It runs a background loop and uses zeromq to 
     receive new requests and stream outputs incrementally via ipc.
-    
+
     The :class:`LLMEngine` generate or encode process is kicked off when a new
     RPCProcessRequest is received by the input_socket.
-    
+
     The self.engine_loop checks the input_socket for new requests,
     adds them to the LLMEngine if there are any, calls the internal
     :class:`LLMEngine.step()`, and sends the RequestOutputs back over
@@ -361,6 +361,7 @@ class MQLLMEngine:
     def _async_socket_engine_callback(self,
                                       request_outputs: REQUEST_OUTPUTS_T):
         """Callback used by engine to make socket handling async with GPU."""
+        logger.trace("CALLBACK_IPC", extra={"perf_timer": time.perf_counter()})
         self._send_outputs(request_outputs)
         self.handle_new_input()
 
