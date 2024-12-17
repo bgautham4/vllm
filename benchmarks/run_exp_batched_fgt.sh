@@ -42,7 +42,7 @@ function run_benchmark {
                         --model "$MODEL" \
                         --dataset-name random \
                         --num_prompts 10000 \
-                        --random-input-len "$ILEN" --random-output-len "$PROB" \
+                        --random-input-len "$ILEN" --p-geometric "$PROB" \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process

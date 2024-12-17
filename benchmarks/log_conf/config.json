@@ -23,9 +23,15 @@
 			}
 		}
 	},
+	"filters": {
+		"trace_filter": {
+			"()": "vllm.logging.TraceFilter"
+		}
+	},
 	"handlers": {
 		"stdout": {
 			"class": "logging.StreamHandler",
+			"level": "INFO",
 			"formatter": "simple",
 			"stream": "ext://sys.stdout"
 		},
@@ -36,22 +42,25 @@
 			"stream": "ext://sys.stderr"
 		},
 		"file": {
-			"class": "logging.handlers.FileHandler",
-			"level": "INFO",
+			"class": "logging.FileHandler",
+			"level": "TRACE",
+			"filters": "trace_filter",
 			"formatter": "json",
 			"filename": "logs/vllm_logs.jsonl"
 		},
 		"queue_handler": {
 			"class": "logging.handlers.QueueHandler",
 			"handlers": [
-				"file"
+				"file",
+				"stdout",
+				"stderr"
 			],
 			"respect_handler_level": true
 		}
 	},
 	"loggers": {
 		"vllm": {
-			"level": "INFO",
+			"level": "TRACE",
 			"handlers": [
 				"queue_handler"
 			]
