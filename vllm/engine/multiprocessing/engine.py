@@ -361,7 +361,6 @@ class MQLLMEngine:
     def _async_socket_engine_callback(self,
                                       request_outputs: REQUEST_OUTPUTS_T):
         """Callback used by engine to make socket handling async with GPU."""
-        logger.trace("CALLBACK_IPC", extra={"perf_timer": time.perf_counter()})
         self._send_outputs(request_outputs)
         self.handle_new_input()
 

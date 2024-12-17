@@ -1050,7 +1050,8 @@ class LLMEngine:
 
         if len(ctx.output_queue) == 0:
             return None
-
+        logger.trace("PROC_OP_START", extra={
+                     "perf_timer": time.perf_counter()})
         # Get pending async postprocessor
         if request_id:
             # When we process only one request, no pop is required
@@ -1236,8 +1237,6 @@ class LLMEngine:
         # Immediately process request outputs here (if callback is given)
         if (ctx.request_outputs
                 and self.process_request_outputs_callback is not None):
-            logger.trace("PROCESSING_CALLBACK", extra={
-                         "perf_timer": time.perf_counter()})
             self.process_request_outputs_callback(ctx.request_outputs)
             ctx.request_outputs.clear()
 
@@ -1375,7 +1374,8 @@ class LLMEngine:
         # batch has completed.
         if not self._has_remaining_steps(seq_group_metadata_list):
             # Schedule iteration
-            logger.trace("SCHED", extra={"perf_timer": time.perf_counter()})
+            logger.trace("SCHED_START", extra={
+                         "perf_timer": time.perf_counter()})
             (seq_group_metadata_list, scheduler_outputs,
              allow_async_output_proc
              ) = self.scheduler[virtual_engine].schedule()

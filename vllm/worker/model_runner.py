@@ -1700,22 +1700,22 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
 
         logits = self.model.compute_logits(hidden_or_intermediate_states,
                                            model_input.sampling_metadata)
-
+        logger.trace("MODEL_FWD_END", extra={
+                     "perf_timer": time.perf_counter()})
         if not self.is_driver_worker:
             return []
 
         if model_input.async_callback is not None:
-            logger.trace("CALLBACK_START", extra={
-                         "perf_timer": time.perf_counter()})
             model_input.async_callback()
-            logger.trace("CALLBACK_END", extra={
+            logger.trace("MODEL_CALLBACK_END", extra={
                          "perf_timer": time.perf_counter()})
-
         # Sample the next token.
         output: SamplerOutput = self.model.sample(
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
         )
+        logger.trace("MODEL_SAMPLE_END", extra={
+                     "perf_timer": time.perf_counter()})
         if (self.observability_config is not None
                 and self.observability_config.collect_model_forward_time
                 and output is not None):

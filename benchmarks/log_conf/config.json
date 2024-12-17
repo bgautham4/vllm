@@ -44,7 +44,7 @@
 		"file": {
 			"class": "logging.FileHandler",
 			"level": "TRACE",
-			"filters": "trace_filter",
+			"filters": ["trace_filter"],
 			"formatter": "json",
 			"filename": "logs/vllm_logs.jsonl"
 		},
