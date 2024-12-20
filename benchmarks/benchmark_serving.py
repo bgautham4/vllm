@@ -898,10 +898,13 @@ def main(args: argparse.Namespace):
         result_json = {**result_json, **benchmark_result}
 
         # Save to file
+        """
         base_model_id = model_id.split("/")[-1]
         max_concurrency_str = (f"-concurrency{args.max_concurrency}"
                                if args.max_concurrency is not None else "")
         file_name = f"{backend}-{args.request_rate}qps{max_concurrency_str}-{base_model_id}-{current_dt}.json"  # noqa
+        """
+        file_name = "metrics.json"
         if args.result_filename:
             file_name = args.result_filename
         if args.result_dir:

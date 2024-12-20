@@ -42,11 +42,12 @@ from vllm.utils import deprecate_kwargs
 import time
 import os
 import numpy as np
+import json
 from collections import namedtuple
 
 MyMetricsOfInterest = namedtuple(
     # Mean metrics
-    'MyMetricsOfInterest', ['prefill_time', 'decode_times', 'finish_time'])
+    'MyMetricsOfInterest', ['start_time', 'prefill_time', 'decode_times', 'finish_time'])
 
 logger = init_logger(__name__)
 
@@ -168,24 +169,33 @@ class MQLLMEngineClient(EngineClient):
 
         except asyncio.CancelledError:
             # Write to log file before client shuts down
-            prefill_times: List[float] = [
-                metric.prefill_time for metric in self.metrics.values()]
-            decode_times: List[float] = [
-                tpot for metric in self.metrics.values() for tpot in metric.decode_times]
-            prefill_mean = np.mean(prefill_times)
-            prefill_std = np.std(prefill_times)
-            decode_mean = np.mean(decode_times)
-            decode_std = np.std(decode_times)
-            num_requests_processed = len(self.metrics)
-            last_time: float = max(self.metrics.values(),
-                                   key=lambda x: x.finish_time).finish_time
             if self.log_dir is not None:
+                prefill_times: List[float] = [
+                    metric.prefill_time for metric in self.metrics.values()]
+                decode_times: List[float] = [
+                    tpot for metric in self.metrics.values() for tpot in metric.decode_times]
+                completion_times: List[float] = [
+                    metric.finish_time - metric.start_time for metric in self.metrics.values()]
+                prefill_mean = np.mean(prefill_times)
+                prefill_std = np.std(prefill_times)
+                decode_mean = np.mean(decode_times)
+                decode_std = np.std(decode_times)
+                num_requests_processed = len(self.metrics)
+                last_time: float = max(self.metrics.values(),
+                                       key=lambda x: x.finish_time).finish_time
+
                 with open(os.path.join(self.log_dir, 'metrics.txt'), 'w') as f:
                     f.write(f'dur: {last_time - self.benchmark_start_time}\n')
                     f.write(f'ttft: {prefill_mean} {prefill_std}\n')
                     f.write(f'decode: {decode_mean} {decode_std}\n')
                     f.write(f'tpt: {num_requests_processed /
                             (last_time - self.benchmark_start_time)}\n')
+                with open(os.path.join(self.log_dir, 'metrics.json'), 'w') as f:
+                    duration = last_time - self.benchmark_start_time
+                    d = {"prefill": (prefill_mean, prefill_std), "decode": (
+                        decode_mean, decode_std), "num_reqs": num_requests_processed,
+                        "duration": duration, "completion_times": completion_times}
+                    json.dump(d, f)
 
             logger.debug("Shutting down MQLLMEngineClient check health loop.")
 
@@ -665,7 +675,7 @@ class MQLLMEngineClient(EngineClient):
                 else:
                     start_index = 1 if len(tpot_list) > 1 else 0
                     self.metrics[request_id] = MyMetricsOfInterest(
-                        ttft, tpot_list[start_index:], last_recorded_time)
+                        start_time, ttft, tpot_list[start_index:], last_recorded_time)
         finally:
             self.output_queues.pop(request_id)
 

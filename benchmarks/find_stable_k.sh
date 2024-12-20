@@ -2,12 +2,11 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--p-geometric p] [--max-num-seqs N]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--olen-mean output length]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--ilen =100"
-        echo "--p--geometric=0.01"
-        echo "--max-num-seqs=100"
+        echo "--ilen == 100"
+        echo "--olen-mean == 100"
 }
 
 function start_server {
@@ -25,36 +24,52 @@ function start_server {
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
-                --max_num_seqs "$MAX_N" \
+                --max_num_seqs 100 \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" &
 }
 
-function run_benchmark {
-
+function binary_search_k {
+        local X=1 # WARN:Assuming this point is always stable
+        local Y=100
+        local Y_OLD=100
         for ((i=1;i<100;i=i+1)); do
+                X=1
+                Y=100
+                Y_OLD=100
                 start_server "$i"
-                sleep 80 #Sleep to ensure server startup is complete
+                sleep 60 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1410,1410
                 sudo nvidia-smi --lock-memory-clocks=5001,5001
-                #Run benchmark
-                python benchmark_serving.py --backend vllm \
-                        --model "$MODEL" \
-                        --dataset-name random \
-                        --num_prompts 10000 \
-                        --random-input-len "$ILEN" --p-geometric "$PROB" \
-                        --experiment-mode BACKLOGGED 
-
+                #To find k
+                while [[ $((Y-X)) -gt 1 ]]; do
+                        echo "using rate = $Y requests/sec"
+                        python benchmark_serving.py --backend vllm \
+                                --model "$MODEL" \
+                                --dataset-name random \
+                                --num-prompts 1000 \
+                                --request-rate "$Y" \
+                                --random-input-len "$ILEN" --p-geometric "$PROB" \
+                                --experiment-mode REGULAR \
+                                --save-result
+                        local RES=$(python test_stability.py --rate "$Y" --file metrics.json)
+                        if [[ "$RES" == "STABLE" ]];then
+                                X="$Y"
+                                Y=$((Y_OLD-1))
+                        else
+                                Y_OLD="$Y"
+                                Y=$(( (X+Y) / 2 ))
+                        fi
+                        rm metrics.json
+                done
                 #Kill server process
+                echo "$i $X $Y" >> results/stability.txt
                 kill -SIGTERM "$!"
-                #wait for cleanup
-                sleep 20
-                #Process logs
-                mv logs/vllm_logs.jsonl "results/log_$i.jsonl" 
+                sleep 10
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,p-geometric:,max-num-seqs:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,olen-mean:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -64,9 +79,9 @@ eval set -- "$TEMP"
 unset TEMP
 
 MODEL="facebook/opt-350m"
-ILEN='100'
-PROB='0.01'
-MAX_N='100'
+ILEN=100
+OLEN=100
+PROB=$(awk '{print 1/$1}' <<< "$OLEN")
 while true; do
         case "$1" in
                 '-h')
@@ -83,16 +98,11 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--p-geometric')
-                        PROB="$2"
+                '--olen-mean')
+                        OLEN="$2"
                         shift 2
                         continue
                 ;;
-                '--max-num-seqs')
-                        MAX_N="$2"
-                        shift 2
-                        continue
-                        ;;
                 '--')
                         shift
                         break
@@ -108,10 +118,5 @@ done
 
 echo "Using model: $MODEL"
 echo "Using input prompt length: $ILEN"
-echo "Using output prompt length: $PROB"
-cd "${0%/*}"
-export VLLM_LOGGING_CONFIG_PATH="$(pwd)/log_conf/config.json" 
-if [[ ! -d 'logs' ]]; then
-        mkdir logs
-fi
+echo "Using mean output tokens generated: $OLEN"
 run_benchmark 
