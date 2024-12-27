@@ -42,7 +42,6 @@ from vllm.utils import deprecate_kwargs
 import time
 import os
 import numpy as np
-import json
 from collections import namedtuple
 
 MyMetricsOfInterest = namedtuple(
@@ -180,6 +179,8 @@ class MQLLMEngineClient(EngineClient):
                 prefill_std = np.std(prefill_times)
                 decode_mean = np.mean(decode_times)
                 decode_std = np.std(decode_times)
+                completion_time_mean = np.mean(completion_times)
+                completion_time_std = np.std(completion_times)
                 num_requests_processed = len(self.metrics)
                 last_time: float = max(self.metrics.values(),
                                        key=lambda x: x.finish_time).finish_time
@@ -188,14 +189,10 @@ class MQLLMEngineClient(EngineClient):
                     f.write(f'dur: {last_time - self.benchmark_start_time}\n')
                     f.write(f'ttft: {prefill_mean} {prefill_std}\n')
                     f.write(f'decode: {decode_mean} {decode_std}\n')
+                    f.write(f'cmpl_time: {completion_time_mean} {
+                            completion_time_std}\n')
                     f.write(f'tpt: {num_requests_processed /
                             (last_time - self.benchmark_start_time)}\n')
-                with open(os.path.join(self.log_dir, 'metrics.json'), 'w') as f:
-                    duration = last_time - self.benchmark_start_time
-                    d = {"prefill": (prefill_mean, prefill_std), "decode": (
-                        decode_mean, decode_std), "num_reqs": num_requests_processed,
-                        "duration": duration, "completion_times": completion_times}
-                    json.dump(d, f)
 
             logger.debug("Shutting down MQLLMEngineClient check health loop.")
 
