@@ -57,7 +57,7 @@ function run_benchmark {
                 #Process logs
                 res=$(awk '
                 /^tpt:.*/{tpt=$2}
-                /^cmpl_time:.*/{cmpl_time=$2}
+                /^cmpl_time_noq:.*/{cmpl_time=$2}
                 END{print tpt,cmpl_time}' ./metrics.txt)
                 echo "$i $res" >> results/metrics.txt
                 rm ./metrics.txt

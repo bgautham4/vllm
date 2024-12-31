@@ -46,7 +46,7 @@ from collections import namedtuple
 
 MyMetricsOfInterest = namedtuple(
     # Mean metrics
-    'MyMetricsOfInterest', ['start_time', 'prefill_time', 'decode_times', 'finish_time'])
+    'MyMetricsOfInterest', ['start_time', 'prefill_time', 'decode_times', 'finish_time', 'queue_time'])
 
 logger = init_logger(__name__)
 
@@ -175,12 +175,16 @@ class MQLLMEngineClient(EngineClient):
                     tpot for metric in self.metrics.values() for tpot in metric.decode_times]
                 completion_times: List[float] = [
                     metric.finish_time - metric.start_time for metric in self.metrics.values()]
+                completion_times_noq: List[float] = [
+                    metric.finish_time - metric.start_time - metric.queue_time for metric in self.metrics.values()]
                 prefill_mean = np.mean(prefill_times)
                 prefill_std = np.std(prefill_times)
                 decode_mean = np.mean(decode_times)
                 decode_std = np.std(decode_times)
                 completion_time_mean = np.mean(completion_times)
                 completion_time_std = np.std(completion_times)
+                completion_time_noq_mean = np.mean(completion_times_noq)
+                completion_time_noq_std = np.std(completion_times_noq)
                 num_requests_processed = len(self.metrics)
                 last_time: float = max(self.metrics.values(),
                                        key=lambda x: x.finish_time).finish_time
@@ -191,6 +195,8 @@ class MQLLMEngineClient(EngineClient):
                     f.write(f'decode: {decode_mean} {decode_std}\n')
                     f.write(f'cmpl_time: {completion_time_mean} {
                             completion_time_std}\n')
+                    f.write(f'cmpl_time_noq: {completion_time_noq_mean} {
+                            completion_time_noq_std}\n')
                     f.write(f'tpt: {num_requests_processed /
                             (last_time - self.benchmark_start_time)}\n')
 
@@ -647,6 +653,7 @@ class MQLLMEngineClient(EngineClient):
             tpot_list: List[float] = []
             ttft = 0.0
             start_time = time.perf_counter()
+            queue_time = 0.0
             last_recorded_time = start_time
             try:
                 while not finished:
@@ -659,6 +666,7 @@ class MQLLMEngineClient(EngineClient):
                     if (ttft == 0.0):
                         ttft = curr_time - \
                             (start_time + request_output.metrics.time_in_queue)
+                        queue_time = request_output.metrics.time_in_queue
 
                     tpot_list.append(curr_time - last_recorded_time)
                     last_recorded_time = curr_time
@@ -672,7 +680,7 @@ class MQLLMEngineClient(EngineClient):
                 else:
                     start_index = 1 if len(tpot_list) > 1 else 0
                     self.metrics[request_id] = MyMetricsOfInterest(
-                        start_time, ttft, tpot_list[start_index:], last_recorded_time)
+                        start_time, ttft, tpot_list[start_index:], last_recorded_time, queue_time)
         finally:
             self.output_queues.pop(request_id)
 
