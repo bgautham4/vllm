@@ -20,7 +20,7 @@ def main(args):
                     continue
                 processed_lines.append(entry)
         i = 0
-        while (i < len(processed_lines)):
+        while (i + 2 < len(processed_lines)):
             sched_start = processed_lines[i]
             if (sched_start.get('message') != 'SCHED_START'):
                 i += 1

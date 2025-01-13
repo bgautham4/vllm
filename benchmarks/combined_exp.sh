@@ -2,19 +2,20 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--p-geometric p] [--max-num-seqs N]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--p-geometric p] [--max-seq-len L] [--max-num-seqs N]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
         echo "--ilen =100"
         echo "--p--geometric=0.01"
         echo "--max-num-seqs=100"
+        echo "--max-seq-len=2048"
 }
 
 function start_server {
         local bsize="$1"
         local token_lim=$(( ($ILEN * 2) * $bsize))
-        if [[ "$token_lim" -lt 4096 ]];then
-                token_lim=4096
+        if [[ "$token_lim" -lt "$MAX_L" ]];then
+                token_lim="$MAX_L"
         fi
 
         if [[ "$token_lim" -gt 32768 ]];then
@@ -25,8 +26,7 @@ function start_server {
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
-                --dtype half \
-                --max-model-len 4096 \
+                --max-model-len "$MAX_L" \
                 --max_num_seqs "$MAX_N" \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" \
@@ -41,7 +41,7 @@ function run_benchmark {
                 echo "k tpt cmpl_time" >> results/metrics.txt
         fi
 
-        for ((i=1;i<100;i=i+1)); do
+        for ((i=1;i<MAX_N;i=i+1)); do
                 start_server "$i"
                 sleep 80 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=870,870
@@ -49,7 +49,7 @@ function run_benchmark {
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
                         --dataset-name random \
-                        --num_prompts 100000 \
+                        --num_prompts 40000 \
                         --random-input-len "$ILEN" --p-geometric "$PROB" \
                         --experiment-mode BACKLOGGED 
 
@@ -68,7 +68,7 @@ function run_benchmark {
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,p-geometric:,max-num-seqs:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,p-geometric:,max-num-seqs:,max-seq-len:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -81,6 +81,7 @@ MODEL="facebook/opt-350m"
 ILEN='100'
 PROB='0.01'
 MAX_N='100'
+MAX_L='2048'
 while true; do
         case "$1" in
                 '-h')
@@ -104,6 +105,11 @@ while true; do
                 ;;
                 '--max-num-seqs')
                         MAX_N="$2"
+                        shift 2
+                        continue
+                        ;;
+                '--max-seq-len')
+                        MAX_L="$2"
                         shift 2
                         continue
                         ;;
