@@ -267,6 +267,7 @@ def sample_random_requests(
     num_prompts: int,
     range_ratio: float,
     tokenizer: PreTrainedTokenizerBase,
+    max_model_len: int,
     p_geometric: Optional[float] = None
 ) -> List[Tuple[str, int, int]]:
     prefix_token_ids = np.random.randint(0,
@@ -279,7 +280,7 @@ def sample_random_requests(
         size=num_prompts,
     )
     if p_geometric is not None:
-        output_lens = [min(np.random.geometric(p_geometric), 2048 - x)
+        output_lens = [min(np.random.geometric(p_geometric), max_model_len - x)
                        for x in input_lens]
     else:
         output_lens = np.random.randint(
@@ -833,6 +834,7 @@ def main(args: argparse.Namespace):
             num_prompts=args.num_prompts,
             range_ratio=args.random_range_ratio,
             tokenizer=tokenizer,
+            max_model_len=args.max_model_len,
             p_geometric=args.p_geometric
         )
 
@@ -974,6 +976,14 @@ if __name__ == "__main__":
         required=True,
         help="Name of the model.",
     )
+
+    parser.add_argument(
+        "--max-model-len",
+        type=int,
+        required=True,
+        help="Max sequence length of model",
+    )
+
     parser.add_argument(
         "--tokenizer",
         type=str,
