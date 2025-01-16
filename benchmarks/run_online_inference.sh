@@ -2,29 +2,28 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--olen-mean output length]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--p-geometric p] [--max-seq-len L] [--max-num-seqs N]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--ilen == 100"
-        echo "--olen-mean == 100"
+        echo "--ilen =100"
+        echo "--p--geometric=0.01"
+        echo "--max-num-seqs=100 -> Adjust N"
+        echo "--max-seq-len=2048"
+        echo "--token-lim=max-seq-len=2048 -> Adjust token budget"
 }
 
 function start_server {
         local bsize="$1"
-        local token_lim=$(( ($ILEN * 2) * $bsize))
-        if [[ "$token_lim" -lt 2048 ]];then
-                token_lim=2048
+        local token_lim="$TOKEN_LIM"
+        if [[ "$token_lim" -lt "$MAX_L" ]]; then
+                token_lim="$MAX_L"
         fi
-
-        if [[ "$token_lim" -gt 32768 ]];then
-                token_lim=32768
-        fi
-
         echo "Token budget set to $token_lim"
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
-                --max_num_seqs 100 \
+                --max-model-len "$MAX_L" \
+                --max_num_seqs "$MAX_N" \
                 --prefill_batch_size "$bsize" \
                 --max_num_batched_tokens "$token_lim" \
                 --mqllm_ec_log_dir ./ &
@@ -37,18 +36,19 @@ function run_benchmark {
                 touch results/metrics.txt
                 echo "k tpt cmpl_time" >> results/metrics.txt
         fi
-        for ((i=1;i<100;i=i+1)); do
+
+        for ((i=1;i<MAX_N;i=i+1)); do
                 start_server "$i"
                 sleep 80 #Sleep to ensure server startup is complete
-                sudo nvidia-smi --lock-gpu-clocks=1410,1410
-                sudo nvidia-smi --lock-memory-clocks=5001,5001
+                sudo nvidia-smi --lock-gpu-clocks=870,870
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
+                        --max-model-len "$MAX_L" \
                         --dataset-name random \
-                        --num_prompts 100000 \
+                        --num_prompts 40000 \
                         --random-input-len "$ILEN" --p-geometric "$PROB" \
-                        --experiment-mode BACKLOGGED
+                        --experiment-mode BACKLOGGED 
 
                 #Kill server process
                 kill -SIGTERM "$!"
@@ -64,7 +64,7 @@ function run_benchmark {
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,olen:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,p-geometric:,max-num-seqs:,max-seq-len:,token-lim:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -74,9 +74,11 @@ eval set -- "$TEMP"
 unset TEMP
 
 MODEL="facebook/opt-350m"
-ILEN=100
-OLEN=100
-PROB=$(awk '{print 1/$1}' <<< "$OLEN")
+ILEN='100'
+PROB='0.01'
+MAX_N='100'
+MAX_L='2048'
+TOKEN_LIM="$MAX_L"
 while true; do
         case "$1" in
                 '-h')
@@ -93,11 +95,26 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--olen')
-                        OLEN="$2"
+                '--p-geometric')
+                        PROB="$2"
                         shift 2
                         continue
                 ;;
+                '--max-num-seqs')
+                        MAX_N="$2"
+                        shift 2
+                        continue
+                        ;;
+                '--max-seq-len')
+                        MAX_L="$2"
+                        shift 2
+                        continue
+                        ;;
+                '--token-lim')
+                        TOKEN_LIM="$2"
+                        shift 2
+                        continue
+                        ;;
                 '--')
                         shift
                         break
@@ -113,8 +130,10 @@ done
 
 echo "Using model: $MODEL"
 echo "Using input prompt length: $ILEN"
-echo "Using mean output tokens generated: $OLEN"
-if [[ ! -d 'results' ]];then
+echo "Using output prompt length: $PROB"
+echo "Using max model len : $MAX_L"
+cd "${0%/*}"
+if [[ ! -d 'results' ]]; then
         mkdir results
 fi
 run_benchmark 
