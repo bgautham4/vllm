@@ -90,6 +90,7 @@ def sample_sharegpt_requests(
     dataset_path: str,
     num_requests: int,
     tokenizer: PreTrainedTokenizerBase,
+    max_model_len: int,
     fixed_output_len: Optional[int] = None,
 ) -> List[Tuple[str, int, int, None]]:
     # Load the dataset.
@@ -121,7 +122,7 @@ def sample_sharegpt_requests(
         if prompt_len < 4 or (fixed_output_len is None and output_len < 4):
             # Prune too short sequences.
             continue
-        if prompt_len > 1024 or prompt_len + output_len > 2048:
+        if prompt_len + output_len > max_model_len:
             # Prune too long sequences.
             continue
         filtered_dataset.append((prompt, prompt_len, output_len, None))
@@ -774,6 +775,7 @@ def main(args: argparse.Namespace):
             dataset_path=args.dataset,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
+            max_model_len=args.max_model_len,
             fixed_output_len=args.sharegpt_output_len,
         )
 
@@ -782,6 +784,7 @@ def main(args: argparse.Namespace):
             dataset_path=args.dataset_path,
             num_requests=args.num_prompts,
             tokenizer=tokenizer,
+            max_model_len=args.max_model_len,
             fixed_output_len=args.sharegpt_output_len,
         )
 
