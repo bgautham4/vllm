@@ -8,7 +8,7 @@ def main(args):
               max_model_len=args.max_model_len,
               max_num_seqs=args.max_num_seqs,
               max_num_batched_tokens=args.max_num_batched_tokens,
-              gpu_memory_utilization=1.0  # Use all of GPU
+              gpu_memory_utilization=args.mem_util  # Use all of GPU
               )
 
 
@@ -39,5 +39,11 @@ if __name__ == '__main__':
         type=int,
         default=2048,
         help='Max no of tokens for parallel prefill/decode.'
+    )
+    parser.add_argument(
+        '--mem-util',
+        type=float,
+        default=0.95,
+        help='GPU mem util between (0 and 1]'
     )
     main(parser.parse_args())
