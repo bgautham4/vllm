@@ -574,6 +574,49 @@ async def benchmark(
         # Custom experiment_mode for online throughput measurements
         tasks: List[asyncio.Task] = []
         completed: int = 0
+        # send 1500 requests in burst
+        for request in input_requests[completed:completed + 1500]:
+            prompt, prompt_len, output_len, mm_content = request
+            request_func_input = RequestFuncInput(model=model_id,
+                                                  prompt=prompt,
+                                                  api_url=api_url,
+                                                  prompt_len=prompt_len,
+                                                  output_len=output_len,
+                                                  logprobs=logprobs,
+                                                  best_of=best_of,
+                                                  multi_modal_content=mm_content,
+                                                  ignore_eos=ignore_eos)
+            tasks.append(
+                asyncio.create_task(
+                    limited_request_func(request_func_input=request_func_input,
+                                         pbar=pbar)))
+        completed += 1500
+        while (completed < len(input_requests)):
+            done, pending = await asyncio.wait(tasks, timeout=0.01)
+            if (not done):  # None completed
+                continue
+            outputs += await asyncio.gather(*done)
+            tasks = list(pending)
+            completed += len(done)
+            for request in input_requests[completed:completed + len(done)]:
+                prompt, prompt_len, output_len, mm_content = request
+                request_func_input = RequestFuncInput(model=model_id,
+                                                      prompt=prompt,
+                                                      api_url=api_url,
+                                                      prompt_len=prompt_len,
+                                                      output_len=output_len,
+                                                      logprobs=logprobs,
+                                                      best_of=best_of,
+                                                      multi_modal_content=mm_content,
+                                                      ignore_eos=ignore_eos)
+                tasks.append(
+                    asyncio.create_task(
+                        limited_request_func(request_func_input=request_func_input,
+                                             pbar=pbar)))
+        # Final await:
+        outputs += await asyncio.gather(*tasks)
+
+        """
         while (completed < len(input_requests)):
             for request in input_requests[completed:completed + 1000]:
                 prompt, prompt_len, output_len, mm_content = request
@@ -599,7 +642,7 @@ async def benchmark(
             completed += 1000
         # Finally await the backlog tasks
         outputs += await asyncio.gather(*tasks)
-
+        """
     else:
         raise ValueError("unknown experiment mode!")
     """
