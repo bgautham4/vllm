@@ -130,6 +130,44 @@ def sample_sharegpt_requests(
     return filtered_dataset
 
 
+def sample_alpaca_requests(
+    dataset_path: str,
+    num_requests: int,
+    tokenizer: PreTrainedTokenizerBase,
+    max_model_len: int,
+) -> List[Tuple[str, int, int, None]]:
+    # Load the dataset.
+    with open(dataset_path, encoding='utf-8') as f:
+        dataset = json.load(f)
+    # Concatenate the instruction and the input into a single prompt
+    dataset = [(data['instruction'] + data['input'],
+                data['output']) for data in dataset]
+
+    # Shuffle the dataset.
+    random.shuffle(dataset)
+
+    # Filter out sequences that are too long or too short
+    filtered_dataset: List[Tuple[str, int, int]] = []
+    for i in range(len(dataset)):
+        if len(filtered_dataset) == num_requests:
+            break
+
+        # Tokenize the prompts and completions.
+        prompt = dataset[i][0]
+        prompt_token_ids = tokenizer(prompt).input_ids
+        completion = dataset[i][1]
+        completion_token_ids = tokenizer(completion).input_ids
+        prompt_len = len(prompt_token_ids)
+        output_len = len(completion_token_ids
+                         )
+        if prompt_len + output_len > max_model_len:
+            # Prune too long sequences.
+            continue
+        filtered_dataset.append((prompt, prompt_len, output_len, None))
+
+    return filtered_dataset
+
+
 def sample_sonnet_requests(
     dataset_path: str,
     num_requests: int,
@@ -448,7 +486,7 @@ async def benchmark(
         request_func = ASYNC_REQUEST_FUNCS[backend]
     else:
         raise ValueError(f"Unknown backend: {backend}")
-    """    
+    """
     print("Starting initial single prompt test run...")
     test_prompt, test_prompt_len, test_output_len, test_mm_content = (
         input_requests[0])
@@ -574,31 +612,16 @@ async def benchmark(
         # Custom experiment_mode for online throughput measurements
         tasks: List[asyncio.Task] = []
         completed: int = 0
-        # send 1500 requests in burst
-        for request in input_requests[completed:completed + 1500]:
-            prompt, prompt_len, output_len, mm_content = request
-            request_func_input = RequestFuncInput(model=model_id,
-                                                  prompt=prompt,
-                                                  api_url=api_url,
-                                                  prompt_len=prompt_len,
-                                                  output_len=output_len,
-                                                  logprobs=logprobs,
-                                                  best_of=best_of,
-                                                  multi_modal_content=mm_content,
-                                                  ignore_eos=ignore_eos)
-            tasks.append(
-                asyncio.create_task(
-                    limited_request_func(request_func_input=request_func_input,
-                                         pbar=pbar)))
-        completed += 1500
+        burst: bool = True
+        prev_finished: int = 0
         while (completed < len(input_requests)):
-            done, pending = await asyncio.wait(tasks, timeout=0.01)
-            if (not done):  # None completed
-                continue
-            outputs += await asyncio.gather(*done)
-            tasks = list(pending)
-            completed += len(done)
-            for request in input_requests[completed:completed + len(done)]:
+            k = 0
+            if burst:
+                k = 1500
+                burst = False
+            else:
+                k = prev_finished
+            for request in input_requests[completed:completed + k]:
                 prompt, prompt_len, output_len, mm_content = request
                 request_func_input = RequestFuncInput(model=model_id,
                                                       prompt=prompt,
@@ -613,6 +636,14 @@ async def benchmark(
                     asyncio.create_task(
                         limited_request_func(request_func_input=request_func_input,
                                              pbar=pbar)))
+            completed += k
+            done, pending = await asyncio.wait(tasks, timeout=0.01)
+            prev_finished = len(done)
+            if (not done):  # None completed
+                continue
+            outputs += await asyncio.gather(*done)
+            tasks = list(pending)
+
         # Final await:
         outputs += await asyncio.gather(*tasks)
 
@@ -831,6 +862,14 @@ def main(args: argparse.Namespace):
             fixed_output_len=args.sharegpt_output_len,
         )
 
+    elif args.dataset_name == "alpaca":
+        input_requests = sample_alpaca_requests(
+            dataset_path=args.dataset_path,
+            num_requests=args.num_prompts,
+            tokenizer=tokenizer,
+            max_model_len=args.max_model_len,
+        )
+
     elif args.dataset_name == "sonnet":
         # Do not format the prompt, pass to message directly
         if args.backend == "openai-chat":
@@ -995,7 +1034,7 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "sonnet", "random", "hf"],
+        choices=["sharegpt", "sonnet", "random", "hf", "alpaca"],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument("--dataset-path",
