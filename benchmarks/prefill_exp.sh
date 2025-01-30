@@ -11,7 +11,7 @@ function disp_help {
 }
 
 function start_server {
-        local maxn="$1"
+        local bsize="$1"
         local token_lim="$TOKEN_LIM"
         if [[ "$token_lim" -lt "$MAX_L" ]]; then
                 token_lim="$MAX_L"
@@ -21,8 +21,8 @@ function start_server {
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
                 --max-model-len "$MAX_L" \
-                --max_num_seqs "$maxn" \
-                --prefill_batch_size "$maxn" \
+                --max_num_seqs "$bsize" \
+                --prefill_batch_size "$bsize" \
                 --batched-mode \
                 --max_num_batched_tokens "$token_lim" \
                 --mqllm_ec_log_dir ./ &
@@ -36,7 +36,7 @@ function run_benchmark {
                 echo "k tpt cmpl_time" >> results/metrics.txt
         fi
 
-        for ((i=1;i<=1024;i*=2)); do
+        for ((i=1;i<=(8192/ILEN);i*=2)); do # Run experiments upto 8192 input tokens
                 start_server "$i"
                 sleep 60 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1380,1380
@@ -45,8 +45,8 @@ function run_benchmark {
                         --model "$MODEL" \
                         --max-model-len "$MAX_L" \
                         --dataset-name random \
-                        --num_prompts "$i" \
-                        --random-input-len "$ILEN" --random-output-len 100 \
+                        --num_prompts $((i*100)) \
+                        --random-input-len "$ILEN" --random-output-len 10 \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process
@@ -75,6 +75,7 @@ unset TEMP
 
 MODEL="facebook/opt-350m"
 ILEN='32'
+MAX_L='2048'
 TOKEN_LIM="$MAX_L"
 while true; do
         case "$1" in
@@ -117,6 +118,7 @@ done
 
 echo "Using model: $MODEL"
 echo "Using input prompt length: $ILEN"
+echo "Using output prompt length: $PROB"
 echo "Using max model len : $MAX_L"
 cd "${0%/*}"
 export VLLM_LOGGING_CONFIG_PATH="$(pwd)/log_conf/config.json" 
