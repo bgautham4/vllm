@@ -47,6 +47,7 @@ function run_benchmark {
                         --dataset-name random \
                         --num_prompts "$i" \
                         --random-input-len "$ILEN" --random-output-len 100 \
+                        --ignore-eos \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process

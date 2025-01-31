@@ -46,6 +46,7 @@ function run_benchmark {
                         --dataset-name sharegpt \
                         --dataset-path ./datasets/ShareGPT_V3_unfiltered_cleaned_split.json\
                         --num_prompts 40000 \
+                        --ignore-eos \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process

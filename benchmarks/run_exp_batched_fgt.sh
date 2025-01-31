@@ -42,6 +42,7 @@ function run_benchmark {
                         --dataset-name random \
                         --num_prompts 10000 \
                         --random-input-len "$ILEN" --p-geometric "$PROB" \
+                        --ignore-eos \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process
