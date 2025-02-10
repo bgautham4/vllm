@@ -2,12 +2,13 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--max-seq-len L]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--max-seq-len L] [--upto T]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--ilen =100"
-        echo "--max-seq-len=2048"
-        echo "--token-lim=max-seq-len=2048 -> Adjust token budget"
+        echo "--ilen =$ILEN"
+        echo "--max-seq-len=$MAX_L"
+        echo "--token-lim=max-seq-len=$TOKEN_LIM -> Adjust token budget"
+        echo "--upto=$UPTO tokens -> Adjust the max number(start with ilen and double each time upto T)"
 }
 
 function start_server {
@@ -36,7 +37,7 @@ function run_benchmark {
                 echo "k tpt cmpl_time" >> results/metrics.txt
         fi
 
-        for ((i=1;i<=(8192/ILEN);i*=2)); do # Run experiments upto 8192 input tokens
+        for ((i=1;i<=(UPTO/ILEN);i*=2)); do # Run experiments upto $UPTO input tokens
                 start_server "$i"
                 sleep 60 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1380,1380
@@ -65,7 +66,7 @@ function run_benchmark {
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,max-seq-len:,token-lim:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,max-seq-len:,token-lim:,upto:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -78,6 +79,7 @@ MODEL="facebook/opt-350m"
 ILEN='32'
 MAX_L='2048'
 TOKEN_LIM="$MAX_L"
+UPTO='8192'
 while true; do
         case "$1" in
                 '-h')
@@ -101,6 +103,11 @@ while true; do
                         ;;
                 '--token-lim')
                         TOKEN_LIM="$2"
+                        shift 2
+                        continue
+                        ;;
+                '--upto')
+                        UPTO="$2"
                         shift 2
                         continue
                         ;;
