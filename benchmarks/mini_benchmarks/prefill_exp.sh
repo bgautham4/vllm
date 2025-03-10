@@ -2,12 +2,13 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--max-seq-len L] [--max-num-seqs N] [--token-lim T]"
+        echo "Usage: [-h] [--model model] [--ilen input length] [--max-seq-len L] [--upto T]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--max-num-seqs=100 -> Adjust N"
-        echo "--max-seq-len=2048"
-        echo "--token-lim=max-seq-len=2048 -> Adjust token budget"
+        echo "--ilen =$ILEN"
+        echo "--max-seq-len=$MAX_L"
+        echo "--token-lim=max-seq-len=$TOKEN_LIM -> Adjust token budget"
+        echo "--upto=$UPTO tokens -> Adjust the max number(start with ilen and double each time upto T)"
 }
 
 function start_server {
@@ -21,8 +22,9 @@ function start_server {
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
                 --max-model-len "$MAX_L" \
-                --max_num_seqs "$MAX_N" \
+                --max_num_seqs "$bsize" \
                 --prefill_batch_size "$bsize" \
+                --batched-mode \
                 --max_num_batched_tokens "$token_lim" \
                 --mqllm_ec_log_dir ./ &
 }
@@ -35,23 +37,24 @@ function run_benchmark {
                 echo "k tpt cmpl_time" >> results/metrics.txt
         fi
 
-        for ((i=1;i<MAX_N;i=i+1)); do
+        for ((i=1;i<=(UPTO/ILEN);i*=2)); do # Run experiments upto $UPTO input tokens
                 start_server "$i"
-                sleep 80 #Sleep to ensure server startup is complete
-                sudo nvidia-smi --lock-gpu-clocks=870,870
+                sleep 60 #Sleep to ensure server startup is complete
+                sudo nvidia-smi --lock-gpu-clocks=1380,1380
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
                         --max-model-len "$MAX_L" \
-                        --dataset-name alpaca \
-                        --dataset-path ./datasets/alpaca_data.json\
-                        --num_prompts 40000 \
+                        --dataset-name random \
+                        --num_prompts $((i*100)) \
+                        --random-input-len "$ILEN" --random-output-len 10 \
+                        --ignore-eos \
                         --experiment-mode BACKLOGGED 
 
                 #Kill server process
                 kill -SIGTERM "$!"
                 #wait for cleanup
-                sleep 20
+                sleep 10
                 #Process logs
                 mv logs/vllm_logs.jsonl "results/log_$i.jsonl" 
                 res=$(awk '
@@ -63,7 +66,7 @@ function run_benchmark {
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,max-num-seqs:,max-seq-len:,token-lim:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,max-seq-len:,token-lim:,upto:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -73,9 +76,10 @@ eval set -- "$TEMP"
 unset TEMP
 
 MODEL="facebook/opt-350m"
-MAX_N='100'
+ILEN='32'
 MAX_L='2048'
 TOKEN_LIM="$MAX_L"
+UPTO='8192'
 while true; do
         case "$1" in
                 '-h')
@@ -87,11 +91,11 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--max-num-seqs')
-                        MAX_N="$2"
+                '--ilen')
+                        ILEN="$2"
                         shift 2
                         continue
-                        ;;
+                ;;
                 '--max-seq-len')
                         MAX_L="$2"
                         shift 2
@@ -99,6 +103,11 @@ while true; do
                         ;;
                 '--token-lim')
                         TOKEN_LIM="$2"
+                        shift 2
+                        continue
+                        ;;
+                '--upto')
+                        UPTO="$2"
                         shift 2
                         continue
                         ;;
@@ -116,18 +125,16 @@ while true; do
 done
 
 echo "Using model: $MODEL"
+echo "Using input prompt length: $ILEN"
+echo "Using output prompt length: $PROB"
 echo "Using max model len : $MAX_L"
-echo "Using token budget: $TOKEN_LIM"
 cd "${0%/*}"
+cd ../
 export VLLM_LOGGING_CONFIG_PATH="$(pwd)/log_conf/config.json" 
 if [[ ! -d 'logs' ]]; then
         mkdir logs
 fi
 if [[ ! -d 'results' ]]; then
         mkdir results
-fi
-if [[ ! -f 'datasets/alpaca_data.json' ]]; then
-        wget https://raw.githubusercontent.com/tatsu-lab/stanford_alpaca/refs/heads/main/alpaca_data.json
-        mv alpaca_data.json ./datasets
 fi
 run_benchmark 

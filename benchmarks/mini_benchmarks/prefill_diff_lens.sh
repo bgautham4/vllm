@@ -2,16 +2,15 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--ilen input length] [--max-seq-len L]"
+        echo "Usage: [-h] [--model model] [--max-seq-len L] [--upto T]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--ilen =100"
-        echo "--max-seq-len=2048"
-        echo "--token-lim=max-seq-len=2048 -> Adjust token budget"
+        echo "--max-seq-len=$MAX_L"
+        echo "--token-lim=max-seq-len=$TOKEN_LIM -> Adjust token budget"
+        echo "--upto=$UPTO tokens -> Adjust the max number(start with ilen and double each time upto T)"
 }
 
 function start_server {
-        local maxn="$1"
         local token_lim="$TOKEN_LIM"
         if [[ "$token_lim" -lt "$MAX_L" ]]; then
                 token_lim="$MAX_L"
@@ -21,8 +20,8 @@ function start_server {
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
                 --max-model-len "$MAX_L" \
-                --max_num_seqs "$maxn" \
-                --prefill_batch_size "$maxn" \
+                --max_num_seqs 1 \
+                --prefill_batch_size 1 \
                 --batched-mode \
                 --max_num_batched_tokens "$token_lim" \
                 --mqllm_ec_log_dir ./ &
@@ -36,8 +35,8 @@ function run_benchmark {
                 echo "k tpt cmpl_time" >> results/metrics.txt
         fi
 
-        for ((i=1;i<=1024;i*=2)); do
-                start_server "$i"
+        for ((i=1;i<=UPTO;i*=2)); do # Run experiments upto $UPTO input tokens
+                start_server 
                 sleep 60 #Sleep to ensure server startup is complete
                 sudo nvidia-smi --lock-gpu-clocks=1380,1380
                 #Run benchmark
@@ -45,8 +44,8 @@ function run_benchmark {
                         --model "$MODEL" \
                         --max-model-len "$MAX_L" \
                         --dataset-name random \
-                        --num_prompts "$i" \
-                        --random-input-len "$ILEN" --random-output-len 100 \
+                        --num_prompts 100 \
+                        --random-input-len "$i" --random-output-len 10 \
                         --ignore-eos \
                         --experiment-mode BACKLOGGED 
 
@@ -65,7 +64,7 @@ function run_benchmark {
         done
 }
 
-TEMP=$(getopt -o 'h' -l 'model:,ilen:,max-seq-len:,token-lim:' -- "$@")
+TEMP=$(getopt -o 'h' -l 'model:,ilen:,max-seq-len:,token-lim:,upto:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
         echo 'Use -h to display help text.'
@@ -75,8 +74,9 @@ eval set -- "$TEMP"
 unset TEMP
 
 MODEL="facebook/opt-350m"
-ILEN='32'
+MAX_L='2048'
 TOKEN_LIM="$MAX_L"
+UPTO='8192'
 while true; do
         case "$1" in
                 '-h')
@@ -88,11 +88,6 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--ilen')
-                        ILEN="$2"
-                        shift 2
-                        continue
-                ;;
                 '--max-seq-len')
                         MAX_L="$2"
                         shift 2
@@ -100,6 +95,11 @@ while true; do
                         ;;
                 '--token-lim')
                         TOKEN_LIM="$2"
+                        shift 2
+                        continue
+                        ;;
+                '--upto')
+                        UPTO="$2"
                         shift 2
                         continue
                         ;;
@@ -117,9 +117,9 @@ while true; do
 done
 
 echo "Using model: $MODEL"
-echo "Using input prompt length: $ILEN"
 echo "Using max model len : $MAX_L"
 cd "${0%/*}"
+cd ../
 export VLLM_LOGGING_CONFIG_PATH="$(pwd)/log_conf/config.json" 
 if [[ ! -d 'logs' ]]; then
         mkdir logs
