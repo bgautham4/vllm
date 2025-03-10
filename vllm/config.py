@@ -144,7 +144,7 @@ class ModelConfig:
                  config_format: ConfigFormat = ConfigFormat.AUTO,
                  chat_template_text_format: str = "string",
                  mm_processor_kwargs: Optional[Dict[str, Any]] = None,
-                 model_stats_log_dir: Optional[str] = None) -> None:
+                 enable_timings: bool = False) -> None:
         self.model = model
         self.tokenizer = tokenizer
         self.tokenizer_mode = tokenizer_mode
@@ -154,7 +154,7 @@ class ModelConfig:
         self.code_revision = code_revision
         self.rope_scaling = rope_scaling
         self.rope_theta = rope_theta
-        self.model_stats_log_dir = model_stats_log_dir
+        self.enable_timings = enable_timings
         # The tokenizer version is consistent with the model version by default.
         if tokenizer_revision is None:
             self.tokenizer_revision = revision

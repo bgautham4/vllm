@@ -185,9 +185,8 @@ class EngineArgs:
     scheduling_policy: Literal["fcfs", "priority"] = "fcfs"
     prefill_batch_size: Optional[int] = None
     mqllm_ec_log_dir: Optional[str] = None  # optional logging directory
-    # If not none, then log model performance metrics
-    model_stats_log_dir: Optional[str] = None
     batched_mode: bool = False
+    enable_model_timings: bool = False
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -880,6 +879,12 @@ class EngineArgs:
             action='store_true',
             help='Run scheduler in batched mode for batched experiments.')
 
+        parser.add_argument(
+            '--enable-model-timings',
+            action='store_true',
+            help='Use torch events to time components of the model execution.'
+            ', Do NOT use this in production setting.')
+
         return parser
 
     @classmethod
@@ -921,7 +926,7 @@ class EngineArgs:
             override_neuron_config=self.override_neuron_config,
             config_format=self.config_format,
             mm_processor_kwargs=self.mm_processor_kwargs,
-            model_stats_log_dir=self.model_stats_log_dir,
+            enable_timings=self.enable_model_timings
         )
 
     def create_load_config(self) -> LoadConfig:
