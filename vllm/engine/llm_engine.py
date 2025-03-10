@@ -61,6 +61,7 @@ from vllm.usage.usage_lib import (UsageContext, is_usage_stats_enabled,
                                   usage_message)
 from vllm.utils import Counter, Device, deprecate_kwargs, weak_bind
 from vllm.version import __version__ as VLLM_VERSION
+from vllm.timing.timers import CPUTimer
 
 logger = init_logger(__name__)
 _LOCAL_LOGGING_INTERVAL_SEC = 5
@@ -720,8 +721,10 @@ class LLMEngine:
         min_cost_scheduler = self.scheduler[costs.index(min(costs))]
         min_cost_scheduler.add_seq_group(seq_group)
         # Log request beging added into queue
+        request_info = {"id": request_id, "input_len": len(
+            processed_inputs.prompt_token_ids), "max_len": params.max_tokens, "ignore_eos": params.ignore_eos}
         logger.trace("ADD_REQ", extra={
-            "id": request_id, "perf_timer": time.perf_counter()})
+            "req_info": request_info, "perf_timer": time.perf_counter()})
         return seq_group
 
     def stop_remote_worker_execution_loop(self) -> None:
@@ -1050,8 +1053,6 @@ class LLMEngine:
 
         if len(ctx.output_queue) == 0:
             return None
-        logger.trace("PROC_OP_START", extra={
-                     "perf_timer": time.perf_counter()})
         # Get pending async postprocessor
         if request_id:
             # When we process only one request, no pop is required
@@ -1374,16 +1375,15 @@ class LLMEngine:
         # batch has completed.
         if not self._has_remaining_steps(seq_group_metadata_list):
             # Schedule iteration
-            logger.trace("SCHED_START", extra={
-                         "perf_timer": time.perf_counter()})
-            (seq_group_metadata_list, scheduler_outputs,
-             allow_async_output_proc
-             ) = self.scheduler[virtual_engine].schedule()
+            with CPUTimer(op="scheduler", enabled=True) as sched_timer:
+                (seq_group_metadata_list, scheduler_outputs,
+                 allow_async_output_proc
+                 ) = self.scheduler[virtual_engine].schedule()
             sched_decision = "PREFILL" if scheduler_outputs.num_prefill_groups > 0 else "DECODE"
             reqs_scheduled = [
                 seq.seq_group.request_id for seq in scheduler_outputs.scheduled_seq_groups]
-            logger.trace("SCHED_END", extra={
-                         "TASK": sched_decision, "ids": reqs_scheduled, "perf_timer": time.perf_counter()})
+            logger.trace("SCHEDULER", extra={"time": time.perf_counter(), "TASK": sched_decision,
+                                             "ids": reqs_scheduled, "time_taken_ms": sched_timer.timing_value})
 
             ctx.seq_group_metadata_list = seq_group_metadata_list
             ctx.scheduler_outputs = scheduler_outputs
@@ -1430,12 +1430,8 @@ class LLMEngine:
                 execute_model_req.async_callback = self.async_callbacks[
                     virtual_engine]
 
-            logger.trace("MODEL_EXEC_START", extra={
-                         "perf_timer": time.perf_counter()})
             outputs = self.model_executor.execute_model(
                 execute_model_req=execute_model_req)
-            logger.trace("MODEL_EXEC_END", extra={
-                         "perf_timer": time.perf_counter()})
 
             # We need to do this here so that last step's sampled_token_ids can
             # be passed to the next iteration for PP.

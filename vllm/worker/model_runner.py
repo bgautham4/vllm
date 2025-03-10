@@ -58,7 +58,7 @@ from vllm.worker.model_runner_base import (
     _init_attn_metadata_from_tensor_dict,
     _init_sampling_metadata_from_tensor_dict, dump_input_when_exception)
 
-import os
+from vllm.timing.timers import CudaTimer, CPUTimer
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -1644,27 +1644,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             model_forward_start.record()
 
         with set_forward_context(model_input.attn_metadata):
-            if (self.model_config.model_stats_log_dir is not None):
-                mft_start = torch.cuda.Event(enable_timing=True)
-                mft_end = torch.cuda.Event(enable_timing=True)
-                mft_start.record()
-
-                hidden_or_intermediate_states = model_executable(
-                    input_ids=model_input.input_tokens,
-                    positions=model_input.input_positions,
-                    kv_caches=kv_caches,
-                    attn_metadata=model_input.attn_metadata,
-                    intermediate_tensors=intermediate_tensors,
-                    **MultiModalInputs.as_kwargs(multi_modal_kwargs,
-                                                 device=self.device),
-                    **seqlen_agnostic_kwargs)
-
-                mft_end.record()
-                torch.cuda.synchronize()
-                with open(os.path.join(self.model_config.model_stats_log_dir, 'temp.txt'), 'a') as f:
-                    f.write(f'{mft_start.elapsed_time(mft_end)}\n')
-
-            else:
+            with CudaTimer(op="model_forward", enabled=self.model_config.enable_timings) as fwd_timer:
                 hidden_or_intermediate_states = model_executable(
                     input_ids=model_input.input_tokens,
                     positions=model_input.input_positions,
@@ -1698,24 +1678,21 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                     torch.tensor(model_forward_time + orig_model_forward_time))
             return hidden_or_intermediate_states
 
-        logits = self.model.compute_logits(hidden_or_intermediate_states,
-                                           model_input.sampling_metadata)
-        logger.trace("MODEL_FWD_END", extra={
-                     "perf_timer": time.perf_counter()})
+        with CudaTimer(op="model_logit", enabled=self.model_config.enable_timings) as logit_timer:
+            logits = self.model.compute_logits(hidden_or_intermediate_states,
+                                               model_input.sampling_metadata)
         if not self.is_driver_worker:
             return []
 
         if model_input.async_callback is not None:
-            model_input.async_callback()
-            logger.trace("MODEL_CALLBACK_END", extra={
-                         "perf_timer": time.perf_counter()})
+            with CPUTimer(op="model_async_callback", enabled=True) as callback_timer:
+                model_input.async_callback()
         # Sample the next token.
-        output: SamplerOutput = self.model.sample(
-            logits=logits,
-            sampling_metadata=model_input.sampling_metadata,
-        )
-        logger.trace("MODEL_SAMPLE_END", extra={
-                     "perf_timer": time.perf_counter()})
+        with CudaTimer(op="model_sample", enabled=self.model_config.enable_timings) as sampler_timer:
+            output: SamplerOutput = self.model.sample(
+                logits=logits,
+                sampling_metadata=model_input.sampling_metadata,
+            )
         if (self.observability_config is not None
                 and self.observability_config.collect_model_forward_time
                 and output is not None):
@@ -1747,7 +1724,12 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                 hidden_states = hidden_or_intermediate_states
 
             output.hidden_states = hidden_states
-
+        # Log stats:
+        logger.trace("MODEL_EXEC", extra={"time": time.perf_counter(),
+                                          "forward_time_ms": fwd_timer.timing_value,
+                                          "logits_time_ms": logit_timer.timing_value,
+                                          "sample_time_ms": sampler_timer.timing_value
+                                          })
         return [output]
 
 
