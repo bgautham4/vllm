@@ -8,9 +8,10 @@ Units of time in ms
 
 
 class CudaTimer:
-    def __init__(self, op: str, enabled: bool):
+    def __init__(self, op: str, enabled: bool, sync_after_exec: bool = True):
         self.enabled = enabled
         self.op = op
+        self.sync_after_exec = sync_after_exec
         self.timing_value: Optional[float] = None
 
     def __enter__(self):
@@ -25,7 +26,14 @@ class CudaTimer:
             return
         self.end_event = torch.cuda.Event(enable_timing=True)
         self.end_event.record()
-        torch.cuda.synchronize()
+        if self.sync_after_exec:
+            torch.cuda.synchronize()
+            self.set_exec_time()
+
+    def set_exec_time(self):
+        # WARN: Should only be called after call to torch.cuda.synchronize
+        if not self.enabled:
+            return
         self.timing_value = self.start_event.elapsed_time(self.end_event)
 
 

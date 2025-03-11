@@ -1644,7 +1644,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             model_forward_start.record()
 
         with set_forward_context(model_input.attn_metadata):
-            with CudaTimer(op="model_forward", enabled=self.model_config.enable_timings) as fwd_timer:
+            with CudaTimer(op="model_forward", enabled=self.model_config.enable_timings, sync_after_exec=False) as fwd_timer:
                 hidden_or_intermediate_states = model_executable(
                     input_ids=model_input.input_tokens,
                     positions=model_input.input_positions,
@@ -1678,7 +1678,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                     torch.tensor(model_forward_time + orig_model_forward_time))
             return hidden_or_intermediate_states
 
-        with CudaTimer(op="model_logit", enabled=self.model_config.enable_timings) as logit_timer:
+        with CudaTimer(op="model_logit", enabled=self.model_config.enable_timings, sync_after_exec=False) as logit_timer:
             logits = self.model.compute_logits(hidden_or_intermediate_states,
                                                model_input.sampling_metadata)
         if not self.is_driver_worker:
@@ -1688,7 +1688,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             with CPUTimer(op="model_async_callback", enabled=True) as callback_timer:
                 model_input.async_callback()
         # Sample the next token.
-        with CudaTimer(op="model_sample", enabled=self.model_config.enable_timings) as sampler_timer:
+        with CudaTimer(op="model_sample", enabled=self.model_config.enable_timings, sync_after_exec=False) as sampler_timer:
             output: SamplerOutput = self.model.sample(
                 logits=logits,
                 sampling_metadata=model_input.sampling_metadata,
@@ -1725,6 +1725,11 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
 
             output.hidden_states = hidden_states
         # Log stats:
+        if self.model_config.enable_timings:
+            torch.cuda.synchronize()
+            fwd_timer.set_exec_time()
+            logit_timer.set_exec_time()
+            sampler_timer.set_exec_time()
         logger.trace("MODEL_EXEC", extra={"time": time.perf_counter(),
                                           "forward_time_ms": fwd_timer.timing_value,
                                           "logits_time_ms": logit_timer.timing_value,
