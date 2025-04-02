@@ -1687,6 +1687,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         if model_input.async_callback is not None:
             with CPUTimer(op="model_async_callback", enabled=True) as callback_timer:
                 model_input.async_callback()
+            logger.trace("MODEL_ASYNC_CALLBACK", extra={
+                         "perf_timer": time.perf_counter(), "time_taken_ms": callback_timer.timing_value})
         # Sample the next token.
         with CudaTimer(op="model_sample", enabled=self.model_config.enable_timings, sync_after_exec=False) as sampler_timer:
             output: SamplerOutput = self.model.sample(
