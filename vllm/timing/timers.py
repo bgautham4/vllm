@@ -15,10 +15,9 @@ class CudaTimer:
         self.timing_value: Optional[float] = None
 
     def __enter__(self):
-        if not self.enabled:
-            return
-        self.start_event = torch.cuda.Event(enable_timing=True)
-        self.start_event.record()
+        if self.enabled:
+            self.start_event = torch.cuda.Event(enable_timing=True)
+            self.start_event.record()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -44,12 +43,11 @@ class CPUTimer:
         self.timing_value: Optional[float] = None
 
     def __enter__(self):
-        if not self.enabled:
-            return
-        self.start_time = time.perf_counter()
+        if self.enabled:
+            self.start_time = time.perf_counter()
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
         if not self.enabled:
             return
-        self.timing_value = (time.perf_counter() - self.start_time) * 1e-3
+        self.timing_value = (time.perf_counter() - self.start_time) * 1e3
