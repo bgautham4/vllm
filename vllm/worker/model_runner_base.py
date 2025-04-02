@@ -132,7 +132,7 @@ def dump_input_when_exception(exclude_args: Optional[List[int]] = None,
                     # Only persist dtype and shape for kvcache tensors
                     # (can be way to big otherwise)
                     if (kv_caches := dumped_inputs.get("kv_caches")) \
-                        and isinstance(kv_caches, Iterable):
+                            and isinstance(kv_caches, Iterable):
                         dumped_inputs["kv_caches"] = [(t.dtype, t.shape)
                                                       for t in kv_caches
                                                       if is_tensor(t)]
@@ -256,6 +256,7 @@ class ModelRunnerBase(ABC, Generic[T]):
         kv_caches: Optional[List[torch.Tensor]],
         intermediate_tensors: Optional[IntermediateTensors],
         num_steps: int = 1,
+        profile_now: bool = False,
     ) -> Optional[List[SamplerOutput]]:
         """
         Execute the model on the given input.

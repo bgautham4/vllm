@@ -58,7 +58,8 @@ from vllm.worker.model_runner_base import (
     _init_attn_metadata_from_tensor_dict,
     _init_sampling_metadata_from_tensor_dict, dump_input_when_exception)
 
-from vllm.timing.timers import CudaTimer, CPUTimer
+from vllm.timing.timers import CPUTimer
+from torch.profiler import profile, record_function, ProfilerActivity, schedule
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -1598,6 +1599,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         kv_caches: List[torch.Tensor],
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
+        profile_now: bool = False,
     ) -> Optional[Union[List[SamplerOutput], IntermediateTensors]]:
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in ModelRunner")
@@ -1644,7 +1646,23 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             model_forward_start.record()
 
         with set_forward_context(model_input.attn_metadata):
-            with CudaTimer(op="model_forward", enabled=self.model_config.enable_timings, sync_after_exec=False) as fwd_timer:
+            if (profile_now):
+                with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                             record_shapes=True) as p:
+                    hidden_or_intermediate_states = model_executable(
+                        input_ids=model_input.input_tokens,
+                        positions=model_input.input_positions,
+                        kv_caches=kv_caches,
+                        attn_metadata=model_input.attn_metadata,
+                        intermediate_tensors=intermediate_tensors,
+                        **MultiModalInputs.as_kwargs(multi_modal_kwargs,
+                                                     device=self.device),
+                        **seqlen_agnostic_kwargs)
+                print(p.key_averages().table(
+                    sort_by="self_cuda_time_total", row_limit=10))
+                p.export_chrome_trace(
+                    "./trace_" + str(p.step_num) + ".json")
+            else:
                 hidden_or_intermediate_states = model_executable(
                     input_ids=model_input.input_tokens,
                     positions=model_input.input_positions,
@@ -1678,9 +1696,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                     torch.tensor(model_forward_time + orig_model_forward_time))
             return hidden_or_intermediate_states
 
-        with CudaTimer(op="model_logit", enabled=self.model_config.enable_timings, sync_after_exec=False) as logit_timer:
-            logits = self.model.compute_logits(hidden_or_intermediate_states,
-                                               model_input.sampling_metadata)
+        logits = self.model.compute_logits(hidden_or_intermediate_states,
+                                           model_input.sampling_metadata)
         if not self.is_driver_worker:
             return []
 
@@ -1690,11 +1707,10 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             logger.trace("MODEL_ASYNC_CALLBACK", extra={
                          "perf_timer": time.perf_counter(), "time_taken_ms": callback_timer.timing_value})
         # Sample the next token.
-        with CudaTimer(op="model_sample", enabled=self.model_config.enable_timings, sync_after_exec=False) as sampler_timer:
-            output: SamplerOutput = self.model.sample(
-                logits=logits,
-                sampling_metadata=model_input.sampling_metadata,
-            )
+        output: SamplerOutput = self.model.sample(
+            logits=logits,
+            sampling_metadata=model_input.sampling_metadata,
+        )
         if (self.observability_config is not None
                 and self.observability_config.collect_model_forward_time
                 and output is not None):
@@ -1726,17 +1742,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                 hidden_states = hidden_or_intermediate_states
 
             output.hidden_states = hidden_states
-        # Log stats:
-        if self.model_config.enable_timings:
-            torch.cuda.synchronize()
-            fwd_timer.set_exec_time()
-            logit_timer.set_exec_time()
-            sampler_timer.set_exec_time()
-        logger.trace("MODEL_EXEC", extra={"time": time.perf_counter(),
-                                          "forward_time_ms": fwd_timer.timing_value,
-                                          "logits_time_ms": logit_timer.timing_value,
-                                          "sample_time_ms": sampler_timer.timing_value
-                                          })
+
         return [output]
 
 

@@ -512,7 +512,7 @@ class Sequence:
     @property
     def prompt_adapter_id(self) -> int:
         return self.prompt_adapter_request.prompt_adapter_id \
-                        if self.prompt_adapter_request else 0
+            if self.prompt_adapter_request else 0
 
     def get_output_text_to_return(self, buffer_length: int,
                                   delta: bool) -> str:
@@ -743,12 +743,12 @@ class SequenceGroup:
     @property
     def prompt_adapter_id(self) -> int:
         return self.prompt_adapter_request.prompt_adapter_id \
-                        if self.prompt_adapter_request else 0
+            if self.prompt_adapter_request else 0
 
     @property
     def prompt_adapter_num_virtual_tokens(self) -> int:
         return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens\
-                         if self.prompt_adapter_request else 0
+            if self.prompt_adapter_request else 0
 
     def init_multi_step(self, num_steps: int) -> None:
         self.state.num_steps = num_steps
@@ -975,12 +975,12 @@ class SequenceGroupMetadata(
     @property
     def prompt_adapter_id(self) -> int:
         return self.prompt_adapter_request.prompt_adapter_id \
-                        if self.prompt_adapter_request else 0
+            if self.prompt_adapter_request else 0
 
     @property
     def prompt_adapter_num_virtual_tokens(self) -> int:
         return self.prompt_adapter_request.prompt_adapter_num_virtual_tokens \
-                        if self.prompt_adapter_request else 0
+            if self.prompt_adapter_request else 0
 
     # Multi-Step Chunked-Prefill property
     @property
@@ -1009,7 +1009,7 @@ class SequenceGroupMetadata(
     def finish_step(self) -> None:
         assert self.state is not None
         assert self.state.current_step < self.state.num_steps, \
-            f"current step {self.state.current_step}, num_steps {self.state.num_steps}" # noqa
+            f"current step {self.state.current_step}, num_steps {self.state.num_steps}"  # noqa
         self.state.current_step += 1
 
 
@@ -1243,7 +1243,7 @@ class HiddenStates(msgspec.Struct, array_like=True,
         """Expand hidden states for sequences with bonus tokens. This is in
         alignment with `MultiStepWorker._expand_execute_model_request`."""
         if self.second_last_token_hidden_states is None \
-            or not seq_with_bonus_token_in_last_step:
+                or not seq_with_bonus_token_in_last_step:
             return
 
         index = []
@@ -1290,6 +1290,8 @@ class ExecuteModelRequest(
     last_sampled_token_ids: Optional[torch.Tensor] = None
     # Async callback
     async_callback: Optional[Callable] = None
+    # Profile this time?
+    profile_now: bool = False
 
     @property
     def is_first_multi_step(self) -> bool:
@@ -1448,7 +1450,7 @@ class ParallelSampleSequenceGroup(SequenceGroupBase):
                 # Get the top-n sequences.
                 n = params._real_n or params.n
                 seqs = self.assembled_seq_group.seqs
-                sorting_key = lambda seq: seq.get_cumulative_logprob()
+                def sorting_key(seq): return seq.get_cumulative_logprob()
                 sorted_seqs = sorted(seqs, key=sorting_key, reverse=True)
                 top_n_seqs = sorted_seqs[:n]
                 self.assembled_seq_group.seqs = top_n_seqs

@@ -330,7 +330,8 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             num_steps=num_steps,
-            **kwargs,
+            profile_now=execute_model_req.profile_now,
+            ** kwargs,
         )
 
         model_execute_time = time.perf_counter() - start_time
@@ -466,8 +467,8 @@ class WorkerWrapperBase:
 
 
 def extract_previous_hidden_states(
-        data: Union[ExecuteModelRequest, Dict[str, torch.Tensor]]) -> \
-            Dict[str, torch.Tensor]:
+    data: Union[ExecuteModelRequest, Dict[str, torch.Tensor]]) -> \
+        Dict[str, torch.Tensor]:
     """If data contains previous_hidden_states, extract it. This returns a dict
     which can be used directly as additional kwargs in any following 
     execute_model calls. This is used in draft models like EAGLE."""
