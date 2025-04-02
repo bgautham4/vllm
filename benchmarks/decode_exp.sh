@@ -16,10 +16,9 @@ function start_server {
                 --port 8000 \
                 --max-model-len "$((input_len + 200))" \
                 --max_num_seqs "$bsize" \
-                --prefill_batch_size "$bsize" \
-                --batched-mode \
+                --prefill_batch_size 1 \
                 --max_num_batched_tokens 4096 \
-                --mqllm_ec_log_dir ./ &
+                --enable_model_timings &
 }
 
 function run_benchmark {
@@ -32,7 +31,7 @@ function run_benchmark {
                         #Run benchmark
                         python benchmark_serving.py --backend vllm \
                                 --model "$MODEL" \
-                                --max-model-len "$MAX_L" \
+                                --max-model-len "$((ilen + 200))" \
                                 --dataset-name random \
                                 --num_prompts "$bsize" \
                                 --random-input-len "$ilen" --random-output-len 100 \

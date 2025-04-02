@@ -12,14 +12,12 @@ function start_server {
         local bsize="$1"
         local input_len="$2"
         local token_lim=$((2 * UPTO))
-        echo "Token budget set to $token_lim"
 
         vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
                 --port 8000 \
                 --max-model-len "$((input_len + 100))" \
                 --max_num_seqs "$bsize" \
                 --prefill_batch_size "$bsize" \
-                --batched-mode \
                 --enable-model-timings \
                 --max_num_batched_tokens "$token_lim" & 
 }
@@ -33,10 +31,10 @@ function run_benchmark {
                         #Run benchmark
                         python benchmark_serving.py --backend vllm \
                                 --model "$MODEL" \
-                                --max-model-len "$((UPTO + 100))" \
+                                --max-model-len "$((ilen + 10))" \
                                 --dataset-name random \
                                 --num_prompts $((i*100)) \
-                                --random-input-len "$ilen" --random-output-len 10 \
+                                --random-input-len "$ilen" --random-output-len 1 \
                                 --ignore-eos \
                                 --experiment-mode BACKLOGGED 
 
