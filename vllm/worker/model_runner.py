@@ -1601,6 +1601,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         num_steps: int = 1,
         profile_now: bool = False,
     ) -> Optional[Union[List[SamplerOutput], IntermediateTensors]]:
+        if (not hasattr(self, 'step_num')):
+            self.step_num = 0
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in ModelRunner")
 
@@ -1661,7 +1663,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                 print(p.key_averages().table(
                     sort_by="self_cuda_time_total", row_limit=10))
                 p.export_chrome_trace(
-                    "./trace_" + str(p.step_num) + ".json")
+                    "./trace_" + str(self.step_num) + ".json")
+                self.step_num += 1
             else:
                 hidden_or_intermediate_states = model_executable(
                     input_ids=model_input.input_tokens,
