@@ -721,10 +721,10 @@ class LLMEngine:
         min_cost_scheduler = self.scheduler[costs.index(min(costs))]
         min_cost_scheduler.add_seq_group(seq_group)
         # Log request beging added into queue
-        request_info = {"id": request_id, "input_len": len(
-            processed_inputs.prompt_token_ids), "max_len": params.max_tokens, "ignore_eos": params.ignore_eos}
-        logger.trace("ADD_REQ", extra={
-            "req_info": request_info, "perf_timer": time.perf_counter()})
+        # request_info = {"id": request_id, "input_len": len(
+        #    processed_inputs.prompt_token_ids), "max_len": params.max_tokens, "ignore_eos": params.ignore_eos}
+        # logger.trace("ADD_REQ", extra={
+        #    "req_info": request_info, "perf_timer": time.perf_counter()})
         return seq_group
 
     def stop_remote_worker_execution_loop(self) -> None:
