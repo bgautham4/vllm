@@ -24,7 +24,7 @@ function run_benchmark {
         for ((bsize=1;bsize<=MAX_BSIZE;bsize+=2)); do
                 start_server "$bsize" "$ILEN"
                 sleep 60 #Sleep to ensure server startup is complete
-                sudo nvidia-smi --lock-gpu-clocks=1380,1380
+                #sudo nvidia-smi --lock-gpu-clocks=1380,1380
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
