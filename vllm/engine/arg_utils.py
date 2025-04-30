@@ -214,6 +214,7 @@ class EngineArgs:
     enable_reasoning: Optional[bool] = None
     reasoning_parser: Optional[str] = None
     use_tqdm_on_load: bool = True
+    prefill_batch_size: Optional[float] = None
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -1039,6 +1040,15 @@ class EngineArgs:
             "scheduled (like TTTTIIIII, leaving IIIII), it will be scheduled "
             "as TTTT in one step and IIIIIIIIII in the next.")
 
+        ## My configurable parameters
+        parser.add_argument(
+            '--prefill-batch-size',
+            type=int,
+            default=EngineArgs.prefill_batch_size, # None
+            help='Prefill batch size to be used for custom policy'
+            ', ensure to set it to be <= max_seq_nums')
+
+
         return parser
 
     @classmethod
@@ -1295,6 +1305,7 @@ class EngineArgs:
             max_num_partial_prefills=self.max_num_partial_prefills,
             max_long_partial_prefills=self.max_long_partial_prefills,
             long_prefill_token_threshold=self.long_prefill_token_threshold,
+            prefill_batch_size=self.prefill_batch_size,
         )
 
         lora_config = LoRAConfig(

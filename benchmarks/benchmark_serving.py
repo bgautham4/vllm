@@ -268,6 +268,7 @@ async def benchmark(
     else:
         raise ValueError(f"Unknown backend: {backend}")
 
+    """
     print("Starting initial single prompt test run...")
     test_prompt, test_prompt_len, test_output_len, test_mm_content = \
         input_requests[0].prompt, input_requests[0].prompt_len, \
@@ -299,7 +300,7 @@ async def benchmark(
             f"are correctly specified. Error: {test_output.error}")
     else:
         print("Initial test run completed. Starting main benchmark run...")
-
+    """
     if lora_modules:
         # For each input request, choose a LoRA module at random.
         lora_modules = iter(

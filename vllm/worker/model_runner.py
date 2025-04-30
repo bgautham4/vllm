@@ -58,6 +58,7 @@ from vllm.worker.model_runner_base import (
     _add_sampling_metadata_broadcastable_dict,
     _init_attn_metadata_from_tensor_dict,
     _init_sampling_metadata_from_tensor_dict)
+from torch.profiler import profile, record_function, ProfilerActivity, schedule
 
 if TYPE_CHECKING:
     from vllm.attention.backends.abstract import AttentionBackend
@@ -1686,8 +1687,11 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         kv_caches: List[torch.Tensor],
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
+        profile_now: bool = False,
         **kwargs,
     ) -> Optional[Union[List[SamplerOutput], IntermediateTensors]]:
+        if (not hasattr(self, 'step_num')):
+            self.step_num = 0
         if num_steps > 1:
             raise ValueError("num_steps > 1 is not supported in ModelRunner")
 
@@ -1767,15 +1771,33 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         if not bypass_model_exec:
             with set_forward_context(model_input.attn_metadata,
                                      self.vllm_config, virtual_engine):
-                hidden_or_intermediate_states = model_executable(
-                    input_ids=model_input.input_tokens,
-                    positions=model_input.input_positions,
-                    intermediate_tensors=intermediate_tensors,
-                    **MultiModalKwargs.as_kwargs(multi_modal_kwargs,
-                                                 device=self.device),
-                    **seqlen_agnostic_kwargs,
-                    **model_kwargs,
-                )
+                if (profile_now):
+                    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                                 record_shapes=True) as p:
+                        hidden_or_intermediate_states = model_executable(
+                            input_ids=model_input.input_tokens,
+                            positions=model_input.input_positions,
+                            intermediate_tensors=intermediate_tensors,
+                            **MultiModalKwargs.as_kwargs(multi_modal_kwargs,
+                                                         device=self.device),
+                            **seqlen_agnostic_kwargs,
+                            **model_kwargs,
+                        )
+                    print(p.key_averages().table(
+                        sort_by="self_cuda_time_total", row_limit=10))
+                    p.export_chrome_trace(
+                        "./trace_" + str(self.step_num) + ".json")
+                    self.step_num += 1
+                else:
+                    hidden_or_intermediate_states = model_executable(
+                        input_ids=model_input.input_tokens,
+                        positions=model_input.input_positions,
+                        intermediate_tensors=intermediate_tensors,
+                        **MultiModalKwargs.as_kwargs(multi_modal_kwargs,
+                                                     device=self.device),
+                        **seqlen_agnostic_kwargs,
+                        **model_kwargs,
+                    )
 
         if (self.observability_config is not None
                 and self.observability_config.collect_model_forward_time):

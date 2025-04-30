@@ -228,6 +228,7 @@ class ModelRunnerBase(ABC, Generic[T]):
         kv_caches: Optional[List[torch.Tensor]],
         intermediate_tensors: Optional[IntermediateTensors] = None,
         num_steps: int = 1,
+        profile_now: bool = False,
         **kwargs,
     ) -> Optional[List[SamplerOutput]]:
         """

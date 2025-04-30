@@ -1374,6 +1374,7 @@ class LLMEngine:
              allow_async_output_proc
              ) = self.scheduler[virtual_engine].schedule()
 
+            sched_decision = "PREFILL" if scheduler_outputs.num_prefill_groups > 0 else "DECODE"
             ctx.seq_group_metadata_list = seq_group_metadata_list
             ctx.scheduler_outputs = scheduler_outputs
 
@@ -1426,6 +1427,7 @@ class LLMEngine:
             if allow_async_output_proc:
                 execute_model_req.async_callback = self.async_callbacks[
                     virtual_engine]
+            execute_model_req.profile_now = sched_decision == "DECODE"
 
             try:
                 outputs = self.model_executor.execute_model(
