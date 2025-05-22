@@ -42,6 +42,17 @@ function run_benchmark {
         done
 }
 
+function reset_clocks {
+        sudo nvidia-smi --reset-gpu-clocks
+        sudo nvidia-smi --reset-memory-clocks
+        sudo nvidia-smi --persistence-mode=0
+}
+
+function cleanup {
+        reset_clocks
+        pkill vllm
+}
+
 TEMP=$(getopt -o 'h' -l 'model:,max-bsize:,ilen:' -- "$@")
 if [[ $? -ne 0 ]];then
         echo 'getopt error, Terminating...' >&2
@@ -93,6 +104,9 @@ cd "${0%/*}"
 if [[ ! -d 'results' ]]; then
         mkdir results
 fi
+
+trap "echo 'SIGTERM received!....stopping running vLLM instances'; cleanup; exit 1" SIGTERM SIGINT
+
 #Lock gpu clocks
 sudo nvidia-smi --persistence-mode=1
 #Change this frequency to base clock
@@ -101,8 +115,5 @@ sudo nvidia-smi --lock-gpu-clocks=1380,1380
 sudo nvidia-smi --lock-memory-clocks=
 
 run_benchmark
-#Reset defaults
-sudo nvidia-smi --reset-gpu-clocks
-sudo nvidia-smi --reset-memory-clocks
-sudo nvidia-smi --persistence-mode=0
 
+reset_clocks
