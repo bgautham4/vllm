@@ -27,7 +27,6 @@ function run_benchmark {
         for ((bsize=1;bsize<=MAX_BSIZE;bsize+=2)); do # Run experiments max-bsize $MAX_BSIZE input tokens total
                 start_server "$bsize" "$ILEN"
                 sleep 100 #Sleep to ensure server startup is complete
-                #sudo nvidia-smi --lock-gpu-clocks=1380,1380
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
@@ -97,4 +96,15 @@ cd "${0%/*}"
 if [[ ! -d 'results' ]]; then
         mkdir results
 fi
+#Lock gpu clocks
+sudo nvidia-smi --persistence-mode=1
+#Change this frequency to base clock
+sudo nvidia-smi --lock-gpu-clocks=1380,1380
+#Change this to fastest supported clock for the above base clock
+sudo nvidia-smi --lock-memory-clocks=
+
 run_benchmark 
+#Reset to defaults
+sudo nvidia-smi --reset-gpu-clocks
+sudo nvidia-smi --reset-memory-clocks
+sudo nvidia-smi --persistence-mode=0
