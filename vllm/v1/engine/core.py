@@ -39,6 +39,9 @@ from vllm.v1.request import Request, RequestStatus
 from vllm.v1.serial_utils import MsgpackDecoder, MsgpackEncoder
 from vllm.v1.structured_output import StructuredOutputManager
 from vllm.version import __version__ as VLLM_VERSION
+from vllm.timing.timers import CPUTimer
+
+from torch.profiler import profile, record_function, ProfilerActivity, schedule
 
 logger = init_logger(__name__)
 
@@ -119,6 +122,9 @@ class EngineCore:
             logger.info("Batch queue is enabled with size %d",
                         self.batch_queue_size)
             self.batch_queue = queue.Queue(self.batch_queue_size)
+        self.profile_scheduler = vllm_config.scheduler_config.profile_scheduler
+        self.profile_model = vllm_config.model_config.profile_model
+        self.step_num = 1
 
     def _initialize_kv_caches(
             self, vllm_config: VllmConfig) -> tuple[int, int, KVCacheConfig]:
@@ -202,8 +208,20 @@ class EngineCore:
                 outputs=[],
                 scheduler_stats=self.scheduler.make_stats(),
             )
-        scheduler_output = self.scheduler.schedule()
-        output = self.model_executor.execute_model(scheduler_output)
+        with CPUTimer(op="scheduler", enabled=self.profile_scheduler) as sched_timer:
+            scheduler_output = self.scheduler.schedule()
+        if self.profile_scheduler:
+            logger.trace("SCHEDULER", extra={"ts": time.perf_counter(), "time_taken_ms": sched_timer.timing_value,
+                                             "scheduler_output": scheduler_output.num_scheduled_tokens})
+        if self.profile_model:
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+                         record_shapes=True) as p:
+                output = self.model_executor.execute_model(scheduler_output)
+                p.export_chrome_trace("./trace_" + str(self.step_num) + ".json")
+                self.step_num += 1
+        else:
+            output = self.model_executor.execute_model(scheduler_output)
+
         engine_core_outputs = self.scheduler.update_from_output(
             scheduler_output, output)  # type: ignore
 

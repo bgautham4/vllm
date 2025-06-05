@@ -342,6 +342,7 @@ class ModelConfig:
         enable_sleep_mode: bool = False,
         override_generation_config: Optional[dict[str, Any]] = None,
         model_impl: Union[str, ModelImpl] = ModelImpl.AUTO,
+        profile_model: bool = False,
     ) -> None:
         self.model = maybe_model_redirect(model)
         self.tokenizer = maybe_model_redirect(tokenizer)
@@ -514,6 +515,7 @@ class ModelConfig:
         self._verify_quantization()
         self._verify_cuda_graph()
         self._verify_bnb_config()
+        self.profile_model = profile_model
 
     @property
     def registry(self):
@@ -1827,6 +1829,8 @@ class SchedulerConfig:
     scheduler_cls: Union[str, type[object]] = "vllm.core.scheduler.Scheduler"
 
     prefill_batch_size: Optional[float] = None
+
+    profile_scheduler: bool = False
 
     def compute_hash(self) -> str:
         """

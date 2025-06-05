@@ -214,7 +214,9 @@ class EngineArgs:
     enable_reasoning: Optional[bool] = None
     reasoning_parser: Optional[str] = None
     use_tqdm_on_load: bool = True
-    prefill_batch_size: Optional[float] = None
+    prefill_batch_size: Optional[int] = None
+    profile_scheduler: bool = False
+    profile_model: bool = False
 
     def __post_init__(self):
         if not self.tokenizer:
@@ -1048,6 +1050,19 @@ class EngineArgs:
             help='Prefill batch size to be used for custom policy'
             ', ensure to set it to be <= max_seq_nums')
 
+        parser.add_argument(
+            '--profile-scheduler',
+            action='store_true',
+            default=False,
+            help="Enable profiling of scheduler.")
+
+        parser.add_argument(
+            '--profile-model',
+            action='store_true',
+            default=False,
+            help="Enable profiling of model.")
+
+
 
         return parser
 
@@ -1110,6 +1125,7 @@ class EngineArgs:
             override_generation_config=self.override_generation_config,
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
+            profile_model=self.profile_model
         )
 
     def create_load_config(self) -> LoadConfig:
@@ -1306,6 +1322,7 @@ class EngineArgs:
             max_long_partial_prefills=self.max_long_partial_prefills,
             long_prefill_token_threshold=self.long_prefill_token_threshold,
             prefill_batch_size=self.prefill_batch_size,
+            profile_scheduler=self.profile_scheduler
         )
 
         lora_config = LoRAConfig(
