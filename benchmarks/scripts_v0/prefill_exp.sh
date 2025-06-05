@@ -2,43 +2,46 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h] [--model model] [--max-bsize B] [--ilen T]"
+        echo "Usage: [-h] [--model model] [--max-bsize T]"
         echo "Defaults:"
         echo "--model=facebook/opt-350m"
-        echo "--max-bsize=256"
-        echo "--ilen=$ILEN, set prompt input len"
+        echo "--ilen=$ILEN" 
+        echo "--max-bsize=$MAX_BSIZE"
 }
 
 function start_server {
         local bsize="$1"
         local input_len="$2"
-        vllm serve "$MODEL"  --chat-template ../examples/template_chatml.jinja \
+        local token_lim=$((2 * bsize * input_len))
+
+        VLLM_USE_V1=0 vllm serve "$MODEL"  --chat-template ../../examples/template_chatml.jinja \
                 --port 8000 \
-                --max-model-len "$((input_len + 200))" \
+                --max-model-len "$((input_len + 100))" \
                 --max_num_seqs "$bsize" \
-                --prefill_batch_size 1 \
-                --max_num_batched_tokens 4096 &
+                --prefill_batch_size "$bsize" \
+                --enable-model-timings \
+                --max_num_batched_tokens "$token_lim" & 
 }
 
 function run_benchmark {
-        for ((bsize=1;bsize<=MAX_BSIZE;bsize+=2)); do
+        for ((bsize=1;bsize<=MAX_BSIZE;bsize+=2)); do # Run experiments max-bsize $MAX_BSIZE input tokens total
                 start_server "$bsize" "$ILEN"
-                sleep 60 #Sleep to ensure server startup is complete
+                sleep 100 #Sleep to ensure server startup is complete
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
                         --model "$MODEL" \
                         --dataset-name random \
-                        --num_prompts "$bsize" \
-                        --random-input-len "$ILEN" --random-output-len 100 \
-                        --ignore-eos \
+                        --num_prompts $((bsize*100)) \
+                        --random-input-len "$ILEN" --random-output-len 1 \
+                        --ignore-eos
 
                 #Kill server process
                 kill -SIGTERM "$!"
                 #wait for cleanup
                 sleep 10
                 #Process logs
-                mkdir results/logs_"$bsize"
-                mv trace_* "results/logs_${bsize}/" 
+                mkdir -p ../results/logs_"$bsize"
+                mv trace_* "../results/logs_${bsize}/"
         done
 }
 
@@ -63,8 +66,8 @@ eval set -- "$TEMP"
 unset TEMP
 
 MODEL="facebook/opt-350m"
-ILEN="32"
-MAX_BSIZE="256"
+MAX_BSIZE='256'
+ILEN='32'
 while true; do
         case "$1" in
                 '-h')
@@ -76,16 +79,16 @@ while true; do
                         shift 2
                         continue
                 ;;
-                '--ilen')
-                        ILEN="$2"
-                        shift 2
-                        continue
-                ;;
                 '--max-bsize')
                         MAX_BSIZE="$2"
                         shift 2
                         continue
-                ;;
+                        ;;
+                '--ilen')
+                        ILEN="$2"
+                        shift 2
+                        continue
+                        ;;
                 '--')
                         shift
                         break
@@ -101,8 +104,8 @@ done
 
 echo "Using model: $MODEL"
 cd "${0%/*}"
-if [[ ! -d 'results' ]]; then
-        mkdir results
+if [[ ! -d '../results' ]]; then
+        mkdir ../results
 fi
 
 trap "echo 'SIGTERM received!....stopping running vLLM instances'; cleanup; exit 1" SIGTERM SIGINT
@@ -111,7 +114,7 @@ trap "echo 'SIGTERM received!....stopping running vLLM instances'; cleanup; exit
 sudo nvidia-smi --persistence-mode=1
 #Change this frequency to base clock
 sudo nvidia-smi --lock-gpu-clocks=1380,1380
-#Change this to fastest supported clock for memory
+#Change this to fastest supported clock for the above base clock
 sudo nvidia-smi --lock-memory-clocks=
 
 run_benchmark
