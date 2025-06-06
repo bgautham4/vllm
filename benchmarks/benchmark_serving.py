@@ -52,7 +52,7 @@ except ImportError:
 
 from benchmark_dataset import (AIMODataset, BurstGPTDataset,
                                ConversationDataset, HuggingFaceDataset,
-                               InstructCoderDataset, RandomDataset,
+                               InstructCoderDataset, RandomDataset, RandomGeometricDataset,
                                SampleRequest, ShareGPTDataset, SonnetDataset,
                                VisionArenaDataset)
 from benchmark_utils import convert_to_pytorch_benchmark_format, write_to_json
@@ -649,6 +649,14 @@ def main(args: argparse.Namespace):
                 input_len=args.random_input_len,
                 output_len=args.random_output_len,
                 range_ratio=args.random_range_ratio,
+            ),
+            "gr":
+            lambda: RandomGeometricDataset(dataset_path=args.dataset_path).sample(
+                tokenizer=tokenizer,
+                num_requests=args.num_prompts,
+                input_len=args.gr_il,
+                mean_output_len=args.gr_mean_ol,
+                max_output_len=args.gr_max_ol
             )
         }
 
@@ -758,7 +766,7 @@ def main(args: argparse.Namespace):
         if args.result_dir:
             file_name = os.path.join(args.result_dir, file_name)
         with open(file_name, "w", encoding='utf-8') as outfile:
-            json.dump(result_json, outfile)
+            json.dump(result_json, outfile, indent=2)
         save_to_pytorch_benchmark_format(args, result_json, file_name)
 
 
@@ -790,7 +798,7 @@ if __name__ == "__main__":
         "--dataset-name",
         type=str,
         default="sharegpt",
-        choices=["sharegpt", "burstgpt", "sonnet", "random", "hf"],
+        choices=["sharegpt", "burstgpt", "sonnet", "random", "gr", "hf"],
         help="Name of the dataset to benchmark on.",
     )
     parser.add_argument("--dataset-path",
@@ -1014,6 +1022,25 @@ if __name__ == "__main__":
               "context length sampled from [input_len * (1 - range_ratio), "
               "input_len * (1 + range_ratio)]."),
     )
+
+    # Geometric random request generator argument group
+    gr_group = parser.add_argument_group("geometric random dataset options")
+
+    gr_group.add_argument("--gr-il",
+                          type=int,
+                          default=1024,
+                          help="Prompt length")
+
+    gr_group.add_argument("--gr-mean-ol",
+                          type=int,
+                          default=128,
+                          help="Prompt length")
+
+    gr_group.add_argument("--gr-max-ol",
+                          type=int,
+                          default=4096,
+                          help="Prompt length")
+
 
     hf_group = parser.add_argument_group("hf dataset options")
     hf_group.add_argument("--hf-subset",

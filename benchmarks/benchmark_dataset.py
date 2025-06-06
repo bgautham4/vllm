@@ -354,6 +354,64 @@ class RandomDataset(BenchmarkDataset):
 
 
 # -----------------------------------------------------------------------------
+# Geometric random dataset
+# -----------------------------------------------------------------------------
+
+class RandomGeometricDataset(BenchmarkDataset):
+    DEFAULT_PREFIX_LEN = 0
+    DEFAULT_INPUT_LEN = 1024
+    DEFAULT_MEAN_OUTPUT_LEN = 128
+    DEFAULT_MAX_OUTPUT_LEN = 4096
+
+    def __init__(
+        self,
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+
+    def sample(
+        self,
+        tokenizer: PreTrainedTokenizerBase,
+        num_requests: int,
+        prefix_len: int = DEFAULT_PREFIX_LEN,
+        input_len: int = DEFAULT_INPUT_LEN,
+        mean_output_len: int = DEFAULT_MEAN_OUTPUT_LEN,
+        max_output_len: int = DEFAULT_MAX_OUTPUT_LEN,
+        **kwargs,
+    ) -> list[SampleRequest]:
+
+        vocab_size = tokenizer.vocab_size
+
+        prefix_token_ids = (np.random.randint(
+            0, vocab_size, size=prefix_len).tolist() if prefix_len > 0 else [])
+
+
+        # Add logging for debugging
+        logger.info("Input length = %d", input_len)
+        logger.info("Mean output length = %s", mean_output_len)
+
+        output_lens = np.random.geometric(1/mean_output_len, size=num_requests)
+        output_lens = [x if x <= max_output_len else max_output_len for x in output_lens] 
+
+        offsets = np.random.randint(0, vocab_size, size=num_requests)
+
+        requests = []
+        for i in range(num_requests):
+            inner_seq = ((offsets[i] + i + np.arange(input_len)) %
+                         vocab_size).tolist()
+            token_sequence = prefix_token_ids + inner_seq
+            prompt = tokenizer.decode(token_sequence)
+            total_input_len = prefix_len + input_len
+            requests.append(
+                SampleRequest(
+                    prompt=prompt,
+                    prompt_len=total_input_len,
+                    expected_output_len=int(output_lens[i]),
+                ))
+        return requests
+
+
+# -----------------------------------------------------------------------------
 # ShareGPT Dataset Implementation
 # -----------------------------------------------------------------------------
 
