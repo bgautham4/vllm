@@ -14,6 +14,8 @@ from typing import Any, Optional, cast
 
 import vllm.envs as envs
 
+import atexit
+
 VLLM_CONFIGURE_LOGGING = envs.VLLM_CONFIGURE_LOGGING
 VLLM_LOGGING_CONFIG_PATH = envs.VLLM_LOGGING_CONFIG_PATH
 VLLM_LOGGING_LEVEL = envs.VLLM_LOGGING_LEVEL
@@ -174,6 +176,11 @@ def _configure_vllm_root_logger() -> None:
 
     if logging_config:
         dictConfig(logging_config)
+        #config queue handler
+        queue_handler = logging.getHandlerByName("queue_handler")
+        if queue_handler is not None:
+            queue_handler.listener.start()
+            atexit.register(queue_handler.listener.stop)
 
 
 def init_logger(name: str) -> _VllmLogger:

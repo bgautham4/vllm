@@ -49,7 +49,7 @@
 			"filename": "logs/vllm_logs.jsonl"
 		},
 		"queue_handler": {
-			"class": "vllm.logging_utils.QueueHandler",
+			"class": "logging.handlers.QueueHandler",
 			"handlers": [
 				"file",
 				"stdout",
