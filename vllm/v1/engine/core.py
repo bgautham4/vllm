@@ -42,7 +42,6 @@ from vllm.version import __version__ as VLLM_VERSION
 from vllm.timing.timers import CPUTimer
 
 from torch.profiler import profile, record_function, ProfilerActivity, schedule
-
 logger = init_logger(__name__)
 
 POLLING_TIMEOUT_S = 2.5
@@ -217,8 +216,8 @@ class EngineCore:
             with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
                          record_shapes=True) as p:
                 output = self.model_executor.execute_model(scheduler_output)
-                p.export_chrome_trace("./trace_" + str(self.step_num) + ".json")
-                self.step_num += 1
+            p.export_chrome_trace("./trace_" + str(self.step_num) + ".json")
+            self.step_num += 1
         else:
             output = self.model_executor.execute_model(scheduler_output)
 
