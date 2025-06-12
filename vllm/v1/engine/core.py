@@ -121,8 +121,7 @@ class EngineCore:
                         self.batch_queue_size)
             self.batch_queue = queue.Queue(self.batch_queue_size)
         self.profile_scheduler = vllm_config.scheduler_config.profile_scheduler
-        self.profile_model = vllm_config.model_config.profile_model
-        self.step_num = 1
+        self.time_model = vllm_config.model_config.time_model
 
     def _initialize_kv_caches(
             self, vllm_config: VllmConfig) -> tuple[int, int, KVCacheConfig]:
@@ -208,19 +207,11 @@ class EngineCore:
             )
         with CPUTimer(op="scheduler", enabled=self.profile_scheduler) as sched_timer:
             scheduler_output = self.scheduler.schedule()
-        if self.profile_scheduler:
-            logger.trace("SCHEDULER", extra={"ts": time.perf_counter(), "time_taken_ms": sched_timer.timing_value,
+        logger.trace("SCHEDULER", extra={"ts": time.perf_counter(), "time_taken_ms": sched_timer.timing_value,
                                              "scheduler_output": scheduler_output.num_scheduled_tokens})
-        if self.profile_model:
-            #with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
-            #             record_shapes=True) as p:
-            with CudaTimer(op="model_exec", enabled=True, sync_after_exec=True) as cuda_timer:
-                output = self.model_executor.execute_model(scheduler_output)
-            logger.trace("MODEL_EXEC", extra={"ts": time.perf_counter(), "time_taken_ms": cuda_timer.timing_value})
-            #p.export_chrome_trace("./trace_" + str(self.step_num) + ".json")
-            #self.step_num += 1
-        else:
+        with CudaTimer(op="model_exec", enabled=self.time_model, sync_after_exec=True) as cuda_timer:
             output = self.model_executor.execute_model(scheduler_output)
+        logger.trace("MODEL_EXEC", extra={"ts": time.perf_counter(), "time_taken_ms": cuda_timer.timing_value})
 
         engine_core_outputs = self.scheduler.update_from_output(
             scheduler_output, output)  # type: ignore

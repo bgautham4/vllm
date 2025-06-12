@@ -216,6 +216,7 @@ class EngineArgs:
     use_tqdm_on_load: bool = True
     prefill_batch_size: Optional[int] = None
     profile_scheduler: bool = False
+    time_model: bool = False
     profile_model: bool = False
 
     def __post_init__(self):
@@ -1057,6 +1058,12 @@ class EngineArgs:
             help="Enable profiling of scheduler.")
 
         parser.add_argument(
+            '--time-model',
+            action='store_true',
+            default=False,
+            help="Enable timing of model.")
+
+        parser.add_argument(
             '--profile-model',
             action='store_true',
             default=False,
@@ -1125,6 +1132,7 @@ class EngineArgs:
             override_generation_config=self.override_generation_config,
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
+            time_model=self.time_model,
             profile_model=self.profile_model
         )
 

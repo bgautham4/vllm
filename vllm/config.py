@@ -342,6 +342,7 @@ class ModelConfig:
         enable_sleep_mode: bool = False,
         override_generation_config: Optional[dict[str, Any]] = None,
         model_impl: Union[str, ModelImpl] = ModelImpl.AUTO,
+        time_model: bool = False,
         profile_model: bool = False,
     ) -> None:
         self.model = maybe_model_redirect(model)
@@ -516,6 +517,7 @@ class ModelConfig:
         self._verify_cuda_graph()
         self._verify_bnb_config()
         self.profile_model = profile_model
+        self.time_model = time_model
 
     @property
     def registry(self):
