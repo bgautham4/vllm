@@ -37,7 +37,7 @@ function run_benchmark {
                 echo "Using input len = $input_len"
                 echo "Using decode len = $output_len"
 
-                start_server "$bsize" "$input_len" "$output_len"
+                start_server "$max_num_seqs" "$input_len" "$output_len"
                 sleep 60 #Sleep to ensure server startup is complete
                 #Run benchmark
                 python benchmark_serving.py --backend vllm \
