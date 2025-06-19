@@ -10,8 +10,8 @@ function disp_help {
         echo "--num-prompts=$NPROMPTS"
         echo "--ilen=$ILEN"
         echo "--olen=$OLEN"
-        echo "Additional arguments starting with -- after -- will be passed as arguments to vllm"
-        echo "See vllm --help to see available list of arguments for vllm"
+        echo "Additional arguments after -- will be passed as arguments to vllm"
+        echo "See vllm serve --help to get available list of arguments for vllm"
 }
 
 function start_server {
@@ -80,6 +80,7 @@ NPROMPTS=1000
 ILEN=256
 OLEN=128
 declare -a VLLM_OPTS
+
 while true; do
         case "$1" in
                 '-h'|'--help')
@@ -89,54 +90,41 @@ while true; do
                 '--model')
                         MODEL="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--token-budget')
                         TB="$2"
                         shift 2
-                        continue
                 ;;
                 '--max-num-seqs')
                         MAX_BSIZE="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--num-prompts')
                         NPROMPTS="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--ilen')
                         ILEN="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--olen')
                         OLEN="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--')
                         shift
-                        continue
+                        break
                 ;;
-                --*)
-                        VLLM_OPTS+=("$2")
-                        shift 2
-                        continue
-                ;;
-                *)
-                        echo "Invalid argument $1"
-                        echo "use -h to display usage"
-                        exit 1
-                ;;
+
         esac
 done
+
+VLLM_OPTS+=("$@")
 
 echo "Using model: $MODEL"
 echo "Using token budget of $TB"

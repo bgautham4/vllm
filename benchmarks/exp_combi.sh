@@ -26,31 +26,23 @@ while true; do
                 '--model')
                         MODEL="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--token-budget')
                         TB="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--ilen')
                         ILEN="$2"
                         shift 2
-                        continue
                 ;;
 
                 '--')
                         shift
-                        continue
+                        break
                 ;;
 
-                *)
-                        echo "Invalid argument $1"
-                        echo "use -h to display usage"
-                        exit 1
-                ;;
         esac
 done
 
@@ -59,5 +51,5 @@ export VLLM_LOGGING_CONFIG_PATH=./configs/logger.json
 trap 'pkill exp.sh; exit 1' SIGTERM SIGINT
 for ((i=1; i<TB-ILEN; i+=5)); do
         ./run.sh --model "$MODEL" --token-budget "$TB" --max-num-seqs "$((i + 1))" --num-prompts 1000 --ilen "$ILEN" --olen "$((i + 10))" -- --profile-scheduler --time-model
-        mv ./logs/vllm_logs.jsonl ./results/log_"$ILEN"_"$TB".jsonl
+        mv ./logs/vllm_logs.jsonl ./results/log_"$ILEN"_"$i".jsonl
 done

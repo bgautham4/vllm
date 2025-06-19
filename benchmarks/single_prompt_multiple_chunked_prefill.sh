@@ -43,7 +43,7 @@ while true; do
 
                 '--')
                         shift
-                        continue
+                        break
                 ;;
 
                 *)
