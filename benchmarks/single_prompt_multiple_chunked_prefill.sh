@@ -54,5 +54,7 @@ while true; do
         esac
 done
 
+export VLLM_LOGGING_CONFIG_PATH=./configs/logger.json
+
 ./run.sh --model "$MODEL" --token-budget "$TB" --max-num-seqs 1 --num-prompts 200 --ilen "$ILEN" --olen 1 -- --profile-scheduler --time-model
 mv ./logs/vllm_logs.jsonl ./results/multi_chunked_prefill_"$ILEN"_"$TB".jsonl

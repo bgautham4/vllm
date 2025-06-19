@@ -15,6 +15,6 @@ MODEL="$1"
 trap 'pkill run.sh; exit 1' SIGINT SIGTERM
 
 for ((i=4;i<2048;i*=2)); do
-        ./run.sh --model "$MODEL" --token-budget "$((32*i))" --max-num-seqs "$i" --num-prompts 1000 --ilen 32 --olen "$((2*i))" -- --profile-scheduler --time-model
+        ./run.sh --model "$MODEL" --token-budget "$((32*i))" --max-num-seqs "$i" --num-prompts 1000 --ilen "$((2048/i))" --olen 32 -- --profile-scheduler --time-model
         mv logs/vllm_logs.jsonl "./results/log_bs_${i}.jsonl"
 done
