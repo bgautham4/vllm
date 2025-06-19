@@ -2,7 +2,7 @@
 
 #Display help text
 function disp_help {
-        echo "Usage: [-h|--help] [--model model] [--token-budget T] [--max-num-seqs S] [--num-prompts N] [--ilen I] [--olen O] [-- --addional-arguments]"
+        echo "Usage: $(basename "$0") [-h|--help] [--model model] [--token-budget T] [--max-num-seqs S] [--num-prompts N] [--ilen I] [--olen O] [-- --addional-arguments]"
         echo "Defaults:"
         echo "--model=$MODEL"
         echo "--token-budget=$TB"
@@ -11,7 +11,7 @@ function disp_help {
         echo "--ilen=$ILEN"
         echo "--olen=$OLEN"
         echo "Additional arguments starting with -- after -- will be passed as arguments to vllm"
-        echo "See vllm --help to see available list of arguments"
+        echo "See vllm --help to see available list of arguments for vllm"
 }
 
 function start_server {
@@ -29,7 +29,17 @@ function start_server {
 
 function run_benchmark {
         start_server 
-        sleep 60 #Sleep to ensure server startup is complete
+
+        num_retries=200
+        while ! curl -sf http://localhost:8000/health > /dev/null; do
+                ((--num_retries))
+                if [ "$num_retries" -lt 0 ]; then
+                        echo "Server startup timed out. Exiting...."
+                        kill -SIGTERM "$BASHPID"
+                fi
+                sleep 1
+        done
+
         #Run benchmark
         python benchmark_serving.py --backend vllm \
                 --model "$MODEL" \
@@ -38,9 +48,8 @@ function run_benchmark {
                 --random-input-len "$ILEN" --random-output-len "$OLEN" \
                 --ignore-eos
 
-        #Kill server process
+        #Kill server process and wait for shutdown
         kill -SIGTERM "$!"
-        #wait for process shutdown
         sleep 10
 }
 
