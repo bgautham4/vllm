@@ -16,7 +16,7 @@ function disp_help {
 
 function start_server {
         local max_model_len=4096
-        [ "$max_model_len" -lt $((ILEN + OLEN)) ] && ((max_model_len = ILEN + OLEN))
+        ((max_model_len < ILEN + OLEN)) && ((max_model_len = ILEN + OLEN))
         echo "Max model len: $max_model_len"
         VLLM_USE_V1=1 vllm serve "$MODEL" \
                 --port 8000 \
@@ -32,8 +32,7 @@ function run_benchmark {
 
         num_retries=200
         while ! curl -sf http://localhost:8000/health > /dev/null; do
-                ((--num_retries))
-                if [ "$num_retries" -lt 0 ]; then
+                if ((--num_retries < 0)); then
                         echo "Server startup timed out. Exiting...."
                         kill -SIGTERM "$BASHPID"
                 fi
