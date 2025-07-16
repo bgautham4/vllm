@@ -4,9 +4,11 @@ function disp_help {
         echo "Usage: $(basename "$0") model" 
 }
 
+
 [ "$#" -ne 1 ] && disp_help && exit 1
 [ "$1" = "-h" ] || [ "$1" = "--help" ] && disp_help && exit 0
 
+cd "${0%/*}" || exit 1
 #configure logging
 export VLLM_LOGGING_CONFIG_PATH=./configs/logger.json
 

@@ -46,6 +46,7 @@ while true; do
         esac
 done
 
+cd "${0%/*}" || exit 1
 export VLLM_LOGGING_CONFIG_PATH=./configs/logger.json
 
 trap 'pkill exp.sh; exit 1' SIGTERM SIGINT

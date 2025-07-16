@@ -132,7 +132,7 @@ echo "Using $NPROMPTS prompts"
 echo "Using input length of $ILEN"
 echo "Using output length of $OLEN"
 
-cd "${0%/*}"
+cd "${0%/*}" || exit 1
 if [[ ! -d 'results' ]]; then
         mkdir results
 fi
