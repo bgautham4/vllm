@@ -209,7 +209,7 @@ class EngineCore:
             scheduler_output = self.scheduler.schedule()
         logger.trace("SCHEDULER", extra={"ts": time.perf_counter(), "time_taken_ms": sched_timer.timing_value,
                                              "scheduler_output": scheduler_output.num_scheduled_tokens})
-        with CudaTimer(op="model_exec", enabled=self.time_model, sync_after_exec=True) as cuda_timer:
+        with CudaTimer(op="model_exec", enabled=self.time_model) as cuda_timer:
             output = self.model_executor.execute_model(scheduler_output)
         logger.trace("MODEL_EXEC", extra={"ts": time.perf_counter(), "time_taken_ms": cuda_timer.timing_value})
 
