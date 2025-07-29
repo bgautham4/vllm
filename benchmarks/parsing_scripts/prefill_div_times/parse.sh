@@ -6,4 +6,4 @@ for f in ./logs/*; do
     echo "Parsed log file $f"
 done
 sort -n tmp.csv > parsed_data.csv && rm tmp.csv
-sed -i '1i ntoks,time_ms,throughput' parsed_data.csv
+sed -i '1i ntoks,time_attn_ms_,time_mlp_ms' parsed_data.csv
